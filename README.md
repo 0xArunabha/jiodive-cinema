@@ -13,12 +13,13 @@ A static, browser-based Virtual Reality Theater player built with Three.js and V
 
 ## ✨ Features
 
-- **Stereoscopic Dual-Eye Rendering:** Software side-by-side stereoscopic rendering with customizable Interpupillary Distance (IPD: 58mm, 64mm, 68mm, 72mm) and Field of View (FOV: 70°–85°), adjustable both in the launcher and live inside VR. *(No per-device optical barrel distortion shader is applied.)*
-- **Dynamic Reticle Depth Matching:** The gaze reticle dynamically projects to the exact 3D distance of whatever you're looking at (floating buttons at ~4.5m or movie screen at ~6.5m) with proportional scaling, avoiding stereo diplopia (double vision).
-- **Physical Click Trigger Integration:** Uses JioDive's capacitive button:
-  - Single click on a button to activate.
-  - Single click in empty space to toggle menu visibility.
-  - Fast double click (< 350ms) to recenter yaw drift without triggering single-click actions.
+- **Calibrated JioDive Optics & Distortion Correction:** Defaults to the verified JioDive (`JIOCardboardHeadset`) inter-lens separation (`62 mm`, adjustable `58–72 mm`), selectable FOV (`70°–85°`), and a toggleable two-pass Brown-Conrady barrel lens distortion shader (`k1 = 0.101`, `k2 = 0.098` normalized in tangent space) with zero-overhead direct bypass when turned off.
+- **Dynamic Reticle Depth Matching:** The gaze reticle projects from cyclopean head center (`rig.head`) to the exact 3D distance of whatever you're looking at (menu buttons at ~4.5 m or curved screen at 5.2–7.45 m) with proportional scaling to prevent stereo diplopia (double vision).
+- **Physical Button, Hands-Free Gaze Dwell & Controller Support:**
+  - **JioDive Capacitive Trigger:** Single click activates aimed button or toggles menu/playback; fast double click (< 350 ms) recenters yaw drift cleanly.
+  - **Hands-Free Gaze Dwell:** Optional `1.2 s` look-to-click mode with an animated cyan progress ring around the reticle (`200 ms` anti-jitter grace period).
+  - **Bluetooth Gamepad & Keyboard:** Works with Xbox/PS/VR Bluetooth controllers (Button `A` select, `B` menu, `X/Y` recenter, D-pad/bumpers seek, thumbstick desktop look) and desktop keys (`Space`/`Enter`, `ArrowLeft`/`ArrowRight`, `R`, `M`, `H`, `Esc`).
+- **Comfort Brightness / Thermal Dimmer:** Cycles `100%` ➔ `80%` ➔ `60%` display dimming in VR (aligned with JioImmerse's `60%` headset brightness limit to reduce glare and OLED heat/battery draw).
 - **Multiple Virtual Environments:**
   - 🏛 **Grand Cinema Hall:** Multi-tier theater with curved screen, amber aisle runner LED strips, stage clearance, and real-time screen light bounce.
   - 🌌 **Void Mode (OLED):** Pure pitch black space with floating screen (skips environment lighting updates and minimizes pixel draw for mobile battery life).
@@ -37,7 +38,7 @@ A static, browser-based Virtual Reality Theater player built with Three.js and V
   - Load local video files (MP4 H.264/AAC, WebM) directly from device storage.
   - Stream CORS-enabled online video URLs (`https://...`).
   - Built-in Oceans HD sample stream with automatic MP4/WebM codec selection.
-- **Clean In-VR Navigation & Saved Fit:** Switch rooms, resize screen presets, toggle 3D formats/eye order, cycle IPD (saved automatically alongside FOV and seat preference), or click `🚪 Exit VR` anytime without reloading.
+- **Clean In-VR Navigation & Saved Fit:** Adjust rooms, screen size, 3D formats/eye swap, IPD, FOV, distortion, dwell mode, and brightness live inside VR (with IPD, FOV, seat preset, distortion, dwell, and brightness persisted in `localStorage`), or click `🚪 Exit` anytime without reloading.
 - **Screen Wake-Lock & Non-Blocking Entry:** Keeps the display awake while watching, re-acquires wake lock on `visibilitychange`, and enters VR immediately without stalling on WebView fullscreen/wake-lock promises.
 - **Mobile-Optimized Performance:** Lambert shading with baked sconce glow textures, no redundant per-frame `VideoTexture` uploads, paused 3D render loop behind the 2D launcher.
 
@@ -91,17 +92,19 @@ Open the Network URL on your phone over the same Wi-Fi network *(accept the loca
 
 | Action | Control |
 | :--- | :--- |
-| **Select Button / Action** | Aim the center reticle at any floating button and **click the JioDive physical button**. |
-| **Toggle Menu (Hide/Show)** | **Click the physical button** while aiming at empty space / movie screen. |
-| **Recenter Screen (Fix Drift)** | **Double-click** the physical button quickly (< 350ms). |
-| **Seek Timeline** | Aim anywhere along the top progress bar (displays `➔ MM:SS` preview) and **click** to jump directly to that timestamp. |
-| **Toggle Subtitles** | Click **💬 CC** in the top bar (`On` / `Off`) after loading an `.srt` or `.vtt` file in the launcher. |
-| **Screen Size / Distance** | Click **📐 Standard** to cycle between **🏟 IMAX**, **📐 Standard**, and **🪑 Balcony**. |
+| **Select Button / Action** | Aim reticle & **click JioDive button** (or enable **⌛ Dwell 1.2s**, press **Space/Enter**, or Gamepad **A**). |
+| **Toggle Menu (Hide/Show)** | **Click physical button** on empty space, press **H**, or Gamepad **B**. |
+| **Recenter Screen (Fix Drift)** | **Double-click** quickly (< 350ms), click **🎯 Recenter**, press **R**, or Gamepad **X/Y/Start**. |
+| **Seek Timeline** | Aim along top progress bar (`➔ MM:SS` preview) & click, use **⏪ -10s / ⏩ +10s**, **Arrow keys**, or **LB/RB / D-Pad**. |
+| **Toggle Subtitles** | Click **💬 CC** in top bar (`On` / `Off`) after loading an `.srt` or `.vtt` file in the launcher. |
+| **Screen Size / Distance** | Click **📐 Standard** to cycle **🏟 IMAX** (5.2m), **📐 Standard** (6.5m), and **🪑 Balcony** (7.45m). |
 | **Swap 3D Eyes** | Click **🔀 L/R** to flip Left/Right or Top/Bottom halves (`🔀 R/L`) for inverted 3D files. |
-| **Cycle IPD** | Click **👁 IPD** in the VR menu (58mm ➔ 64mm ➔ 68mm ➔ 72mm). |
-| **Cycle Format** | Click **🕶 Format** in the VR menu (2D ➔ Half-SBS ➔ Full-SBS ➔ Half-OU ➔ Full-OU). |
-| **Bed / Lay-Down Mode** | Click **🛏 Bed Mode** to tilt both screen and menu upward together. |
-| **Exit VR** | Click **🚪 Exit VR** or exit fullscreen to return to the movie selection launcher. |
+| **Cycle IPD & FOV** | Click **👁 62mm** (58/62/64/68/72 mm) or **🔭 FOV 75°** (70°/75°/80°/85°) in VR. |
+| **Lens Distortion & Dimmer** | Click **🔍 Lens On/Off** (`k1=0.101, k2=0.098`) or **☀ 100%** (100% / 80% / 60% dimmer). |
+| **Hands-Free Gaze Dwell** | Click **⌛ Dwell** to toggle automatic `1.2s` look-to-click selection. |
+| **Cycle Format** | Click **🕶 Format** (`2D` ➔ `Half-SBS` ➔ `Full-SBS` ➔ `Half-OU` ➔ `Full-OU`). |
+| **Bed / Lay-Down Mode** | Click **🛏 Bed** to tilt both screen and menu upward onto the ceiling. |
+| **Exit VR** | Click **🚪 Exit**, press **Esc**, or exit fullscreen to return to the launcher. |
 
 ---
 

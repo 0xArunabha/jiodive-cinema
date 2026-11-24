@@ -25,6 +25,9 @@ const ipdSelect = document.getElementById('ipd-select');
 const fovSelect = document.getElementById('fov-select');
 const sizeSelect = document.getElementById('size-select');
 const swapEyesSelect = document.getElementById('swap-eyes-select');
+const distortionSelect = document.getElementById('distortion-select');
+const brightnessSelect = document.getElementById('brightness-select');
+const dwellSelect = document.getElementById('dwell-select');
 
 // Verified high-reliability sample video with full CORS support (VideoJS CDN)
 const DEMO_VIDEO_MP4 = 'https://vjs.zencdn.net/v/oceans.mp4';
@@ -207,6 +210,9 @@ function loadSavedPreferences() {
     restoreSelectOption(ipdSelect, prefs.ipd, (v) => rig.setIPD(parseFloat(v)));
     restoreSelectOption(fovSelect, prefs.fov, (v) => rig.setFOV(parseFloat(v)));
     restoreSelectOption(sizeSelect, prefs.screenSize, (v) => cinemaScreen.setScreenPreset(v));
+    restoreSelectOption(distortionSelect, prefs.distortion, (v) => rig.setDistortion(v === 'jiodive'));
+    restoreSelectOption(brightnessSelect, prefs.brightness, (v) => gazeUI.setBrightness(parseFloat(v)));
+    restoreSelectOption(dwellSelect, prefs.dwell, (v) => gazeUI.setGazeDwell(v !== 'off'));
   } catch {
     // Ignore storage access errors in restricted modes
   }
@@ -217,9 +223,12 @@ function savePreferences() {
     localStorage.setItem(
       PREFS_KEY,
       JSON.stringify({
-        ipd: ipdSelect ? ipdSelect.value : '0.064',
+        ipd: ipdSelect ? ipdSelect.value : '0.062',
         fov: fovSelect ? fovSelect.value : '75',
-        screenSize: sizeSelect ? sizeSelect.value : 'standard'
+        screenSize: sizeSelect ? sizeSelect.value : 'standard',
+        distortion: distortionSelect ? distortionSelect.value : 'jiodive',
+        brightness: brightnessSelect ? brightnessSelect.value : '1',
+        dwell: dwellSelect ? dwellSelect.value : 'off'
       })
     );
   } catch {
@@ -228,7 +237,7 @@ function savePreferences() {
 }
 
 loadSavedPreferences();
-[ipdSelect, fovSelect, sizeSelect].forEach((el) => {
+[ipdSelect, fovSelect, sizeSelect, distortionSelect, brightnessSelect, dwellSelect].forEach((el) => {
   if (el) el.addEventListener('change', savePreferences);
 });
 
@@ -339,7 +348,7 @@ btnEnterVr.addEventListener('click', () => {
 
   requestWakeLock().catch(() => {});
 
-  // Apply selected settings (Eye Swap, Format, Screen Size, Environment, IPD, FOV)
+  // Apply selected settings (Eye Swap, Format, Screen Size, Environment, IPD, FOV, Optics, Dwell)
   cinemaScreen.setSwapEyes(Boolean(swapEyesSelect && swapEyesSelect.value === 'swapped'));
   cinemaScreen.setFormat(modeSelect.value);
   if (sizeSelect) {
@@ -353,10 +362,19 @@ btnEnterVr.addEventListener('click', () => {
   if (fovSelect) {
     rig.setFOV(parseFloat(fovSelect.value));
   }
+  if (distortionSelect) {
+    rig.setDistortion(distortionSelect.value === 'jiodive');
+  }
+  if (dwellSelect) {
+    gazeUI.setGazeDwell(dwellSelect.value !== 'off');
+  }
 
   // Hide 2D launcher & enter VR immediately
   launcher.classList.add('hidden');
   rig.isVrActive = true;
+  if (brightnessSelect) {
+    gazeUI.setBrightness(parseFloat(brightnessSelect.value));
+  }
   rig.recenter();
 });
 

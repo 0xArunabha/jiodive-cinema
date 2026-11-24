@@ -28,22 +28,35 @@ export class GazeUI {
     this.lastTimeRenderKey = '';
     this.ccHintUntil = 0;
 
+    // Gaze Dwell & Comfort Dimmer state
+    this.gazeDwellEnabled = false;
+    this.dwellDelayMs = 1200;
+    this.dwellGraceMs = 200;
+    this.dwellTarget = null;
+    this.dwellStart = 0;
+    this.dwellConsumed = false;
+    this.brightness = 1.0;
+
+    // Gamepad state
+    this.prevPadButtons = {};
+    this.lastUpdateTime = performance.now();
+
     // Physical button double-click detection & single-click debounce timer
     this.lastClickTime = 0;
     this.clickTimeout = null;
 
-    // Reticle
+    // Reticle + Dwell Progress Ring
     this.createReticle();
 
     // Floating 3D Menu Panel
     this.createControlPanel();
 
-    // Physical Button & Pointer Listeners
+    // Physical Button, Keyboard & Pointer Listeners
     this.initClickListeners();
   }
 
   createReticle() {
-    // Reticle dot fixed at center of view (1.8m in front of eyes)
+    // Reticle dot fixed at center of view
     const geom = new THREE.RingGeometry(0.008, 0.016, 24);
     const mat = new THREE.MeshBasicMaterial({
       color: 0xffffff,
@@ -56,46 +69,82 @@ export class GazeUI {
     this.reticle.position.set(0, 0, -1.8);
     this.reticle.renderOrder = 999;
     this.rig.head.add(this.reticle);
+
+    // GPU-driven radial dwell ring wrapped around the reticle
+    this.dwellUniforms = { uProgress: { value: 0.0 } };
+    const dwellMat = new THREE.ShaderMaterial({
+      uniforms: this.dwellUniforms,
+      transparent: true,
+      depthTest: false,
+      depthWrite: false,
+      vertexShader: `
+        varying vec2 vUv;
+        void main() {
+          vUv = uv;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: `
+        uniform float uProgress;
+        varying vec2 vUv;
+        void main() {
+          vec2 p = vUv - 0.5;
+          float r = length(p);
+          float ringMask = smoothstep(0.32, 0.35, r) * (1.0 - smoothstep(0.46, 0.49, r));
+          float angle = atan(p.x, p.y);
+          float norm = (angle < 0.0 ? angle + 6.2831853 : angle) / 6.2831853;
+          float arcMask = step(norm, uProgress);
+          float alpha = ringMask * arcMask * 0.95;
+          if (alpha <= 0.01) discard;
+          gl_FragColor = vec4(0.22, 0.74, 0.97, alpha);
+        }
+      `
+    });
+    this.dwellRing = new THREE.Mesh(new THREE.PlaneGeometry(0.056, 0.056), dwellMat);
+    this.dwellRing.position.set(0, 0, -1.8);
+    this.dwellRing.renderOrder = 1000;
+    this.dwellRing.visible = false;
+    this.rig.head.add(this.dwellRing);
   }
 
   createControlPanel() {
     this.menuGroup = new THREE.Group();
-    // Position floating panel comfortably in lower gaze view, scaled to clear armrests & fit all aspect ratios
-    this.menuGroup.position.set(0, 0.36, -4.5);
+    // Position floating panel above floor (y > 0.12m) and below IMAX screen edge, scaled to clear armrests
+    this.menuGroup.position.set(0, 0.48, -3.8);
     this.menuGroup.rotation.x = -0.2;
-    this.menuGroup.scale.set(0.73, 0.73, 0.73);
+    this.menuGroup.scale.set(0.56, 0.56, 0.56);
     this.rig.scene.add(this.menuGroup);
 
-    // Background Plate (accommodates top seek bar row + 2 6-button rows)
-    const bgGeom = new THREE.PlaneGeometry(3.96, 1.02);
+    // Background Plate (accommodates top seek bar row + 2 6-button rows + 4-pill utility bar)
+    const bgGeom = new THREE.PlaneGeometry(3.96, 1.28);
     const bgMat = new THREE.MeshBasicMaterial({
       color: 0x0c0e17,
       transparent: true,
-      opacity: 0.82,
+      opacity: 0.84,
       side: THREE.DoubleSide
     });
     const bg = new THREE.Mesh(bgGeom, bgMat);
     this.menuGroup.add(bg);
 
-    // Top Row (y = 0.33): Interactive Seek Bar + Time Readout + CC Toggle
-    this.createSeekBarRow();
+    // Top Row (y = 0.46): Interactive Seek Bar + Time Readout + CC Toggle
+    this.createSeekBarRow(0.46);
 
     const ipdMm = Math.round(this.rig.ipd * 1000);
     const buttons = [
-      // Row 1 (y = 0.04) - Playback, Scene & Screen Size
-      { label: '⏪ -10s', x: -1.55, y: 0.04, action: () => this.seek(-10) },
-      { label: '▶ Play', x: -0.93, y: 0.04, action: () => this.togglePlay(), ref: 'playBtnMesh' },
-      { label: '⏩ +10s', x: -0.31, y: 0.04, action: () => this.seek(10) },
-      { label: '🏛 Room', x: 0.31, y: 0.04, action: () => this.cycleEnvironment() },
-      { label: '📐 Standard', x: 0.93, y: 0.04, action: () => this.cycleScreenPreset(), ref: 'sizeBtnMesh' },
-      { label: '🎯 Recenter', x: 1.55, y: 0.04, action: () => this.rig.recenter() },
-      // Row 2 (y = -0.26) - Audio, 3D Format, Eye Swap, IPD, Bed & Exit
-      { label: '🔊 Sound', x: -1.55, y: -0.26, action: () => this.toggleAudio(), ref: 'audioBtnMesh' },
-      { label: '🕶 2D', x: -0.93, y: -0.26, action: () => this.cycleFormat(), ref: 'formatBtnMesh' },
-      { label: '🔀 L/R', x: -0.31, y: -0.26, action: () => this.toggleSwapEyes(), ref: 'swapBtnMesh' },
-      { label: `👁 ${ipdMm}mm`, x: 0.31, y: -0.26, action: () => this.cycleIPD(), ref: 'ipdBtnMesh' },
-      { label: '🛏 Bed', x: 0.93, y: -0.26, action: () => this.toggleBedMode() },
-      { label: '🚪 Exit', x: 1.55, y: -0.26, action: () => this.exitVR() }
+      // Row 1 (y = 0.17) - Playback, Scene & Screen Size
+      { label: '⏪ -10s', x: -1.55, y: 0.17, action: () => this.seek(-10) },
+      { label: '▶ Play', x: -0.93, y: 0.17, action: () => this.togglePlay(), ref: 'playBtnMesh' },
+      { label: '⏩ +10s', x: -0.31, y: 0.17, action: () => this.seek(10) },
+      { label: '🏛 Room', x: 0.31, y: 0.17, action: () => this.cycleEnvironment() },
+      { label: '📐 Standard', x: 0.93, y: 0.17, action: () => this.cycleScreenPreset(), ref: 'sizeBtnMesh' },
+      { label: '🎯 Recenter', x: 1.55, y: 0.17, action: () => this.rig.recenter() },
+      // Row 2 (y = -0.13) - Audio, 3D Format, Eye Swap, IPD, Bed & Exit
+      { label: '🔊 Sound', x: -1.55, y: -0.13, action: () => this.toggleAudio(), ref: 'audioBtnMesh' },
+      { label: '🕶 2D', x: -0.93, y: -0.13, action: () => this.cycleFormat(), ref: 'formatBtnMesh' },
+      { label: '🔀 L/R', x: -0.31, y: -0.13, action: () => this.toggleSwapEyes(), ref: 'swapBtnMesh' },
+      { label: `👁 ${ipdMm}mm`, x: 0.31, y: -0.13, action: () => this.cycleIPD(), ref: 'ipdBtnMesh' },
+      { label: '🛏 Bed', x: 0.93, y: -0.13, action: () => this.toggleBedMode() },
+      { label: '🚪 Exit', x: 1.55, y: -0.13, action: () => this.exitVR() }
     ];
 
     buttons.forEach((b) => {
@@ -110,9 +159,30 @@ export class GazeUI {
         this[b.ref] = btnMesh;
       }
     });
+
+    // Row 3 Utility Strip (y = -0.44) - Optics Distortion, Brightness Dimmer, Gaze Dwell, FOV
+    const utilityButtons = [
+      { label: '🔍 Lens On', x: -1.41, y: -0.44, action: () => this.toggleDistortion(), ref: 'lensBtnMesh' },
+      { label: '☀ 100%', x: -0.47, y: -0.44, action: () => this.cycleBrightness(), ref: 'brightBtnMesh' },
+      { label: '⌛ Dwell Off', x: 0.47, y: -0.44, action: () => this.toggleGazeDwell(), ref: 'dwellBtnMesh' },
+      { label: `🔭 FOV ${Math.round(this.rig.fov)}°`, x: 1.41, y: -0.44, action: () => this.cycleFOV(), ref: 'fovBtnMesh' }
+    ];
+
+    utilityButtons.forEach((b) => {
+      const btnMesh = this.createButtonMesh(b.label, b.x, b.y, b.action, {
+        width: 0.86,
+        height: 0.16,
+        canvasW: 320,
+        canvasH: 64,
+        fontSize: 24
+      });
+      this.menuGroup.add(btnMesh);
+      this.interactiveObjects.push(btnMesh);
+      this[b.ref] = btnMesh;
+    });
   }
 
-  createSeekBarRow() {
+  createSeekBarRow(rowY = 0.46) {
     // 1. Seek Track (interactive UV horizontal scrub)
     const seekCanvas = document.createElement('canvas');
     seekCanvas.width = 512;
@@ -122,7 +192,7 @@ export class GazeUI {
     const seekGeom = new THREE.PlaneGeometry(2.34, 0.14);
     const seekMat = new THREE.MeshBasicMaterial({ map: seekTex, transparent: true, side: THREE.DoubleSide });
     this.seekBarMesh = new THREE.Mesh(seekGeom, seekMat);
-    this.seekBarMesh.position.set(-0.66, 0.33, 0.02);
+    this.seekBarMesh.position.set(-0.66, rowY, 0.02);
     this.seekBarMesh.userData = {
       isSeekBar: true,
       noHoverScale: true,
@@ -141,7 +211,7 @@ export class GazeUI {
     const timeGeom = new THREE.PlaneGeometry(0.74, 0.14);
     const timeMat = new THREE.MeshBasicMaterial({ map: timeTex, transparent: true, side: THREE.DoubleSide });
     this.timeMesh = new THREE.Mesh(timeGeom, timeMat);
-    this.timeMesh.position.set(0.94, 0.33, 0.02);
+    this.timeMesh.position.set(0.94, rowY, 0.02);
     this.timeMesh.userData = {
       canvas: timeCanvas,
       ctx: timeCanvas.getContext('2d')
@@ -149,7 +219,7 @@ export class GazeUI {
     this.menuGroup.add(this.timeMesh);
 
     // 3. Subtitle Toggle Button
-    const ccBtn = this.createButtonMesh('💬 CC', 1.60, 0.33, () => this.toggleSubtitles(), {
+    const ccBtn = this.createButtonMesh('💬 CC', 1.60, rowY, () => this.toggleSubtitles(), {
       width: 0.46,
       height: 0.14,
       canvasW: 168,
@@ -239,8 +309,31 @@ export class GazeUI {
     }
   }
 
+  triggerInteractiveObject(targetObj, targetSeekRatio) {
+    if (targetObj === this.seekBarMesh && targetSeekRatio !== null) {
+      this.seekToRatio(targetSeekRatio);
+      return true;
+    }
+    if (targetObj && targetObj.userData && targetObj.userData.onClick) {
+      targetObj.userData.onClick();
+      if (!targetObj.userData.noHoverScale) {
+        this.pulseButton(targetObj);
+      }
+      return true;
+    }
+    return false;
+  }
+
+  triggerEmptySpaceAction() {
+    if (this.video && this.video.paused) {
+      this.video.play().catch((err) => console.log('Tap play failed:', err));
+    } else {
+      this.toggleMenu();
+    }
+  }
+
   initClickListeners() {
-    const handleTrigger = (e) => {
+    const handleTrigger = () => {
       // Bug 2: Ignore any pointer events if VR is not active (prevents launcher taps triggering VR UI)
       if (!this.rig.isVrActive) return;
 
@@ -266,25 +359,55 @@ export class GazeUI {
       this.clickTimeout = setTimeout(() => {
         this.clickTimeout = null;
         if (!this.rig.isVrActive) return;
-
-        if (targetObj === this.seekBarMesh && targetSeekRatio !== null) {
-          this.seekToRatio(targetSeekRatio);
-        } else if (targetObj && targetObj.userData && targetObj.userData.onClick) {
-          targetObj.userData.onClick();
-          this.pulseButton(targetObj);
-        } else {
-          // Clicked empty space
-          if (this.video && this.video.paused) {
-            this.video.play().catch((err) => console.log('Tap play failed:', err));
-          } else {
-            this.toggleMenu();
-          }
+        if (!this.triggerInteractiveObject(targetObj, targetSeekRatio)) {
+          this.triggerEmptySpaceAction();
         }
       }, 280);
     };
 
-    // JioDive physical button triggers pointerdown / touchstart on the screen
+    // JioDive capacitive button triggers pointerdown / touchstart on the screen
     window.addEventListener('pointerdown', handleTrigger);
+
+    // Keyboard shortcuts for desktop / Bluetooth HID clickers while VR is active
+    window.addEventListener('keydown', (e) => {
+      if (!this.rig.isVrActive) return;
+      if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'TEXTAREA')) {
+        return;
+      }
+
+      switch (e.code) {
+        case 'Space':
+        case 'Enter':
+        case 'KeyK':
+          e.preventDefault();
+          if (!this.triggerInteractiveObject(this.hoveredObject, this.hoverSeekRatio)) {
+            this.togglePlay();
+          }
+          break;
+        case 'ArrowLeft':
+        case 'KeyJ':
+          e.preventDefault();
+          this.seek(-10);
+          break;
+        case 'ArrowRight':
+        case 'KeyL':
+          e.preventDefault();
+          this.seek(10);
+          break;
+        case 'KeyM':
+          this.toggleAudio();
+          break;
+        case 'KeyH':
+          this.toggleMenu();
+          break;
+        case 'KeyR':
+          this.rig.recenter();
+          break;
+        case 'Escape':
+          this.exitVR();
+          break;
+      }
+    });
   }
 
   pulseButton(mesh) {
@@ -375,7 +498,7 @@ export class GazeUI {
   }
 
   cycleIPD() {
-    const ipdValues = [0.058, 0.064, 0.068, 0.072];
+    const ipdValues = [0.058, 0.062, 0.064, 0.068, 0.072];
     const currentIndex = ipdValues.findIndex(v => Math.abs(v - this.rig.ipd) < 0.001);
     const nextIndex = (currentIndex + 1) % ipdValues.length;
     const newIPD = ipdValues[nextIndex];
@@ -387,8 +510,55 @@ export class GazeUI {
     this.syncSelect('ipd-select', newIPD.toString());
   }
 
+  toggleDistortion() {
+    const next = !this.rig.distortionEnabled;
+    this.rig.setDistortion(next);
+    this.syncSelect('distortion-select', next ? 'jiodive' : 'off');
+  }
+
+  setBrightness(level) {
+    this.brightness = THREE.MathUtils.clamp(level, 0.4, 1.0);
+    const dimmer = document.getElementById('vr-dimmer');
+    if (dimmer) {
+      const opacity = this.rig.isVrActive ? Math.max(0, 1.0 - this.brightness) : 0;
+      dimmer.style.opacity = opacity.toFixed(2);
+    }
+  }
+
+  cycleBrightness() {
+    const levels = [1.0, 0.8, 0.6];
+    const currentIndex = levels.findIndex(v => Math.abs(v - this.brightness) < 0.05);
+    const next = levels[(currentIndex + 1) % levels.length];
+    this.setBrightness(next);
+    this.syncSelect('brightness-select', next.toString());
+  }
+
+  setGazeDwell(enabled) {
+    this.gazeDwellEnabled = Boolean(enabled);
+    if (!this.gazeDwellEnabled) {
+      this.dwellTarget = null;
+      this.dwellConsumed = false;
+      if (this.dwellRing) this.dwellRing.visible = false;
+    }
+  }
+
+  toggleGazeDwell() {
+    const next = !this.gazeDwellEnabled;
+    this.setGazeDwell(next);
+    this.syncSelect('dwell-select', next ? '1200' : 'off');
+  }
+
+  cycleFOV() {
+    const fovs = [70, 75, 80, 85];
+    const currentIndex = fovs.findIndex(v => Math.abs(v - this.rig.fov) < 1);
+    const next = fovs[(currentIndex + 1) % fovs.length];
+    this.rig.setFOV(next);
+    this.syncSelect('fov-select', next.toString());
+  }
+
   exitVR() {
     this.rig.isVrActive = false;
+    this.setBrightness(this.brightness); // Ensures dimmer opacity resets to 0 on launcher
     if (this.video) {
       this.video.pause();
     }
@@ -524,9 +694,9 @@ export class GazeUI {
    */
   setTilt(pitchDegrees) {
     const pitchRad = THREE.MathUtils.degToRad(pitchDegrees);
-    // Relative to eye position (0, 1.4, 0), normal menu pos is (0, -1.04, -4.5)
-    const relY = -1.04;
-    const relZ = -4.5;
+    // Relative to eye position (0, 1.4, 0), normal menu pos is (0, -0.92, -3.8)
+    const relY = -0.92;
+    const relZ = -3.8;
 
     const newY = 1.4 + (relY * Math.cos(pitchRad) - relZ * Math.sin(pitchRad));
     const newZ = relY * Math.sin(pitchRad) + relZ * Math.cos(pitchRad);
@@ -535,13 +705,87 @@ export class GazeUI {
     this.menuGroup.rotation.x = -0.2 + pitchRad;
   }
 
-  update() {
-    // Update active subtitles cue
-    if (this.screen && this.screen.updateSubtitles) {
-      this.screen.updateSubtitles();
+  pollGamepad(dtSec) {
+    if (!navigator.getGamepads) return;
+    const pads = navigator.getGamepads();
+    let pad = null;
+    for (let i = 0; i < pads.length; i++) {
+      if (pads[i] && pads[i].connected) {
+        pad = pads[i];
+        break;
+      }
+    }
+    if (!pad) return;
+
+    const pressed = (idx) => Boolean(pad.buttons[idx] && pad.buttons[idx].pressed);
+    const justPressed = (idx) => pressed(idx) && !this.prevPadButtons[idx];
+
+    if (justPressed(0)) {
+      if (!this.triggerInteractiveObject(this.hoveredObject, this.hoverSeekRatio)) {
+        this.triggerEmptySpaceAction();
+      }
+    }
+    if (justPressed(1)) this.toggleMenu();
+    if (justPressed(2) || justPressed(3) || justPressed(8) || justPressed(9)) this.rig.recenter();
+    if (justPressed(14) || justPressed(4)) this.seek(-10);
+    if (justPressed(15) || justPressed(5)) this.seek(10);
+
+    for (let b = 0; b < pad.buttons.length; b++) {
+      this.prevPadButtons[b] = pressed(b);
     }
 
-    // Dynamic Button Labels
+    // Optional thumbstick look pan on non-gyro desktops
+    if (!this.rig.hasGyro && pad.axes && pad.axes.length >= 2) {
+      const ax = Math.abs(pad.axes[0]) > 0.22 ? pad.axes[0] : (pad.axes.length >= 3 && Math.abs(pad.axes[2]) > 0.22 ? pad.axes[2] : 0);
+      const ay = Math.abs(pad.axes[1]) > 0.22 ? pad.axes[1] : (pad.axes.length >= 4 && Math.abs(pad.axes[3]) > 0.22 ? pad.axes[3] : 0);
+      if (ax !== 0 || ay !== 0) {
+        this.rig.desktopEuler.y -= ax * 1.4 * dtSec;
+        this.rig.desktopEuler.x = Math.max(-Math.PI / 2.2, Math.min(Math.PI / 2.2, this.rig.desktopEuler.x - ay * 1.1 * dtSec));
+      }
+    }
+  }
+
+  updateGazeDwell(now) {
+    if (!this.gazeDwellEnabled || !this.isMenuVisible || !this.hoveredObject || this.hoveredObject.userData?.isSeekBar) {
+      this.dwellTarget = null;
+      this.dwellConsumed = false;
+      this.dwellUniforms.uProgress.value = 0.0;
+      this.dwellRing.visible = false;
+      return;
+    }
+
+    if (this.dwellTarget !== this.hoveredObject) {
+      this.dwellTarget = this.hoveredObject;
+      this.dwellStart = now;
+      this.dwellConsumed = false;
+      this.dwellUniforms.uProgress.value = 0.0;
+      this.dwellRing.visible = false;
+      return;
+    }
+
+    if (this.dwellConsumed) {
+      this.dwellRing.visible = false;
+      return;
+    }
+
+    const elapsed = now - this.dwellStart;
+    if (elapsed <= this.dwellGraceMs) {
+      this.dwellRing.visible = false;
+      return;
+    }
+
+    const progress = Math.min(1.0, (elapsed - this.dwellGraceMs) / (this.dwellDelayMs - this.dwellGraceMs));
+    this.dwellUniforms.uProgress.value = progress;
+    this.dwellRing.visible = true;
+
+    if (progress >= 1.0) {
+      this.dwellConsumed = true;
+      this.dwellRing.visible = false;
+      this.triggerInteractiveObject(this.hoveredObject, null);
+    }
+  }
+
+  updateDynamicLabels(now) {
     if (this.video) {
       if (this.playBtnMesh) {
         const expectedPlay = this.video.paused ? '▶ Play' : '⏸ Pause';
@@ -556,24 +800,23 @@ export class GazeUI {
           this.updateButtonText(this.audioBtnMesh, expectedAudio);
         }
       }
+    }
 
-      if (this.formatBtnMesh) {
-        let fmtLabel = '🕶 2D';
-        if (this.screen.format === '3d-hsbs' || this.screen.format === '3d-sbs') fmtLabel = '👓 Half-SBS';
-        else if (this.screen.format === '3d-fsbs') fmtLabel = '👓 Full-SBS';
-        else if (this.screen.format === '3d-hou' || this.screen.format === '3d-ou') fmtLabel = '👓 Half-OU';
-        else if (this.screen.format === '3d-fou') fmtLabel = '👓 Full-OU';
-        if (this.formatBtnMesh.userData.currentText !== fmtLabel) {
-          this.updateButtonText(this.formatBtnMesh, fmtLabel);
-        }
+    if (this.formatBtnMesh && this.screen) {
+      let fmtLabel = '🕶 2D';
+      if (this.screen.format === '3d-hsbs' || this.screen.format === '3d-sbs') fmtLabel = '👓 Half-SBS';
+      else if (this.screen.format === '3d-fsbs') fmtLabel = '👓 Full-SBS';
+      else if (this.screen.format === '3d-hou' || this.screen.format === '3d-ou') fmtLabel = '👓 Half-OU';
+      else if (this.screen.format === '3d-fou') fmtLabel = '👓 Full-OU';
+      if (this.formatBtnMesh.userData.currentText !== fmtLabel) {
+        this.updateButtonText(this.formatBtnMesh, fmtLabel);
       }
+    }
 
-      if (this.ipdBtnMesh) {
-        const mm = Math.round(this.rig.ipd * 1000);
-        const expectedIpd = `👁 ${mm}mm`;
-        if (this.ipdBtnMesh.userData.currentText !== expectedIpd) {
-          this.updateButtonText(this.ipdBtnMesh, expectedIpd);
-        }
+    if (this.ipdBtnMesh) {
+      const expectedIpd = `👁 ${Math.round(this.rig.ipd * 1000)}mm`;
+      if (this.ipdBtnMesh.userData.currentText !== expectedIpd) {
+        this.updateButtonText(this.ipdBtnMesh, expectedIpd);
       }
     }
 
@@ -593,7 +836,7 @@ export class GazeUI {
 
     if (this.ccBtnMesh && this.screen) {
       let ccLabel = '💬 CC';
-      if (performance.now() < this.ccHintUntil) {
+      if (now < this.ccHintUntil) {
         ccLabel = 'Load .SRT';
       } else if (this.screen.subtitleCues && this.screen.subtitleCues.length > 0) {
         ccLabel = this.screen.subtitlesEnabled ? '💬 CC On' : '💬 CC Off';
@@ -602,6 +845,50 @@ export class GazeUI {
         this.updateButtonText(this.ccBtnMesh, ccLabel);
       }
     }
+
+    if (this.lensBtnMesh) {
+      const lensLabel = this.rig.distortionEnabled ? '🔍 Lens On' : '🔍 Lens Off';
+      if (this.lensBtnMesh.userData.currentText !== lensLabel) {
+        this.updateButtonText(this.lensBtnMesh, lensLabel);
+      }
+    }
+
+    if (this.brightBtnMesh) {
+      const brightLabel = `☀ ${Math.round(this.brightness * 100)}%`;
+      if (this.brightBtnMesh.userData.currentText !== brightLabel) {
+        this.updateButtonText(this.brightBtnMesh, brightLabel);
+      }
+    }
+
+    if (this.dwellBtnMesh) {
+      const dwellLabel = this.gazeDwellEnabled ? '⌛ Dwell 1.2s' : '⌛ Dwell Off';
+      if (this.dwellBtnMesh.userData.currentText !== dwellLabel) {
+        this.updateButtonText(this.dwellBtnMesh, dwellLabel);
+      }
+    }
+
+    if (this.fovBtnMesh) {
+      const fovLabel = `🔭 FOV ${Math.round(this.rig.fov)}°`;
+      if (this.fovBtnMesh.userData.currentText !== fovLabel) {
+        this.updateButtonText(this.fovBtnMesh, fovLabel);
+      }
+    }
+  }
+
+  update(now = performance.now()) {
+    const dtSec = Math.min(0.1, Math.max(0, (now - this.lastUpdateTime) / 1000));
+    this.lastUpdateTime = now;
+
+    // Poll Bluetooth / USB Gamepad inputs
+    this.pollGamepad(dtSec);
+
+    // Update active subtitles cue
+    if (this.screen && this.screen.updateSubtitles) {
+      this.screen.updateSubtitles();
+    }
+
+    // Update dynamic button canvas labels
+    this.updateDynamicLabels(now);
 
     // Cast ray from cyclopean head center along forward (-Z) gaze axis
     this.rig.head.updateWorldMatrix(true, false);
@@ -651,6 +938,9 @@ export class GazeUI {
       }
     }
 
+    // Update hands-free Gaze Dwell ring & click trigger
+    this.updateGazeDwell(now);
+
     // Redraw seek bar & time badge only when visible values change
     if (this.isMenuVisible && this.video) {
       const dur = Number.isFinite(this.video.duration) && this.video.duration > 0 ? this.video.duration : 0;
@@ -672,13 +962,16 @@ export class GazeUI {
       }
     }
 
-    // Place reticle at hit distance slightly forward to avoid z-fighting and eliminate diplopia/double vision
-    this.reticle.position.z = -targetDistance + 0.04;
+    // Place reticle & dwell ring at hit distance slightly forward to avoid z-fighting and diplopia
+    const depthZ = -targetDistance + 0.04;
+    this.reticle.position.z = depthZ;
+    this.dwellRing.position.z = depthZ + 0.001;
 
     // Scale reticle proportionally with distance to maintain optimal gaze reticle size
     const baseScale = targetDistance / 1.8;
     const hoverScale = this.hoveredObject && !this.hoveredObject.userData?.noHoverScale ? 1.35 : 1.0;
     const finalScale = baseScale * hoverScale;
     this.reticle.scale.set(finalScale, finalScale, finalScale);
+    this.dwellRing.scale.set(finalScale, finalScale, finalScale);
   }
 }

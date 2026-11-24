@@ -1,9 +1,22 @@
 import * as THREE from 'three';
 
 /**
+ * Verified hardware optical profile extracted from official JioImmerse (JIOCardboardHeadset)
+ */
+export const JIODIVE_OPTICS = {
+  vendor: 'JIO',
+  model: 'JIOCardboardHeadset',
+  ipdMeters: 0.062,          // 62 mm inter-lens distance
+  screenToLensMeters: 0.04,  // 40 mm lens-to-screen distance
+  trayToLensMeters: 0.035,   // 35 mm bottom tray offset
+  k1: 0.101,                 // Brown-Conrady quadratic coefficient
+  k2: 0.098                  // Brown-Conrady quartic coefficient
+};
+
+/**
  * JioDive Dual-Eye Stereo Camera Rig
- * Handles stereo separation (IPD), device orientation (gyroscope),
- * physical click events, and viewport rendering.
+ * Handles stereo separation (IPD), optional JioDive barrel lens distortion pass,
+ * device orientation (gyroscope), and split-screen viewport rendering.
  */
 export class StereoRig {
   constructor(renderer, scene) {
@@ -19,17 +32,20 @@ export class StereoRig {
     this.head = new THREE.Object3D();
     this.container.add(this.head);
 
-    // Interpupillary Distance (IPD) - default 64mm (0.064 meters)
-    this.ipd = 0.064;
+    // Optical state (calibrated to JIOCardboardHeadset spec)
+    this.ipd = JIODIVE_OPTICS.ipdMeters;
+    this.fov = 75;
+    this.distortionEnabled = true;
+    this.k1 = JIODIVE_OPTICS.k1;
+    this.k2 = JIODIVE_OPTICS.k2;
 
     // Dual Cameras
-    const aspect = (window.innerWidth / 2) / window.innerHeight;
-    const fov = 75; // Standard Cardboard / JioDive lens FOV
+    const aspect = (window.innerWidth / 2) / Math.max(1, window.innerHeight);
     const near = 0.1;
     const far = 1000;
 
-    this.cameraL = new THREE.PerspectiveCamera(fov, aspect, near, far);
-    this.cameraR = new THREE.PerspectiveCamera(fov, aspect, near, far);
+    this.cameraL = new THREE.PerspectiveCamera(this.fov, aspect, near, far);
+    this.cameraR = new THREE.PerspectiveCamera(this.fov, aspect, near, far);
 
     // Layer 0 is default (shared objects)
     // Layer 1 is Left-Eye only
@@ -42,7 +58,15 @@ export class StereoRig {
     this.cameraR.layers.disable(1);
     this.cameraR.layers.enable(2);
 
+    // Distortion pipeline resources (lazy-initialized when distortion is active)
+    this.rtL = null;
+    this.rtR = null;
+    this.postScene = null;
+    this.postCamera = null;
+    this.postUniforms = null;
+
     this.updateCameras();
+    this.updateProjectionAndUniforms();
     this.head.add(this.cameraL);
     this.head.add(this.cameraR);
 
@@ -88,10 +112,149 @@ export class StereoRig {
   }
 
   setFOV(fovDegrees) {
-    this.cameraL.fov = fovDegrees;
+    this.fov = fovDegrees;
+    this.updateProjectionAndUniforms();
+  }
+
+  setDistortion(enabled, k1 = JIODIVE_OPTICS.k1, k2 = JIODIVE_OPTICS.k2) {
+    this.distortionEnabled = Boolean(enabled);
+    this.k1 = k1;
+    this.k2 = k2;
+    if (!this.distortionEnabled) {
+      this.disposeDistortionTargets();
+    }
+    this.updateProjectionAndUniforms();
+  }
+
+  ensureDistortionPass() {
+    if (!this.postScene) {
+      this.postCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+      this.postScene = new THREE.Scene();
+
+      this.postUniforms = {
+        tDiffuse: { value: null },
+        uK1: { value: this.k1 },
+        uK2: { value: this.k2 },
+        uTanHalf: { value: new THREE.Vector2(1, 1) },
+        uRenderTanHalf: { value: new THREE.Vector2(1, 1) }
+      };
+
+      const postMat = new THREE.ShaderMaterial({
+        uniforms: this.postUniforms,
+        depthTest: false,
+        depthWrite: false,
+        toneMapped: false,
+        vertexShader: `
+          varying vec2 vUv;
+          void main() {
+            vUv = uv;
+            gl_Position = vec4(position.xy, 0.0, 1.0);
+          }
+        `,
+        fragmentShader: `
+          uniform sampler2D tDiffuse;
+          uniform float uK1;
+          uniform float uK2;
+          uniform vec2 uTanHalf;
+          uniform vec2 uRenderTanHalf;
+          varying vec2 vUv;
+
+          void main() {
+            vec2 p = vUv * 2.0 - 1.0;
+            vec2 t = p * uTanHalf;
+            float r2 = dot(t, t);
+            float factor = 1.0 + uK1 * r2 + uK2 * r2 * r2;
+            vec2 srcUv = (t * factor / uRenderTanHalf) * 0.5 + 0.5;
+
+            vec2 edgeDist = min(srcUv, 1.0 - srcUv);
+            float insideMask = smoothstep(-0.004, 0.004, min(edgeDist.x, edgeDist.y));
+            if (insideMask <= 0.0) {
+              gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0);
+              return;
+            }
+
+            vec4 texel = texture2D(tDiffuse, clamp(srcUv, vec2(0.0), vec2(1.0)));
+            gl_FragColor = vec4(texel.rgb * insideMask, 1.0);
+            #include <colorspace_fragment>
+          }
+        `
+      });
+
+      const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), postMat);
+      this.postScene.add(quad);
+      this.updateProjectionAndUniforms();
+    }
+
+    if (!this.rtL || !this.rtR) {
+      this.resizeDistortionTargets();
+    }
+  }
+
+  disposeDistortionTargets() {
+    if (this.rtL) {
+      this.rtL.dispose();
+      this.rtL = null;
+    }
+    if (this.rtR) {
+      this.rtR.dispose();
+      this.rtR = null;
+    }
+  }
+
+  resizeDistortionTargets() {
+    this.disposeDistortionTargets();
+    const dpr = this.renderer.getPixelRatio();
+    const rtW = Math.max(1, Math.floor((window.innerWidth * dpr) / 2));
+    const rtH = Math.max(1, Math.floor(window.innerHeight * dpr));
+    const canHalfFloat =
+      this.renderer.capabilities.isWebGL2 &&
+      (this.renderer.extensions.has('EXT_color_buffer_float') ||
+        this.renderer.extensions.has('EXT_color_buffer_half_float'));
+
+    const opts = {
+      minFilter: THREE.LinearFilter,
+      magFilter: THREE.LinearFilter,
+      format: THREE.RGBAFormat,
+      type: canHalfFloat ? THREE.HalfFloatType : THREE.UnsignedByteType,
+      samples: this.renderer.capabilities.isWebGL2 ? 2 : 0
+    };
+
+    this.rtL = new THREE.WebGLRenderTarget(rtW, rtH, opts);
+    this.rtR = new THREE.WebGLRenderTarget(rtW, rtH, opts);
+  }
+
+  updateProjectionAndUniforms() {
+    const aspect = (window.innerWidth / 2) / Math.max(1, window.innerHeight);
+    const tanHalfY = Math.tan(THREE.MathUtils.degToRad(this.fov) * 0.5);
+    const tanHalfX = tanHalfY * aspect;
+
+    let renderFov = this.fov;
+    let renderTanHalfX = tanHalfX;
+    let renderTanHalfY = tanHalfY;
+
+    if (this.distortionEnabled) {
+      const edgeTan = Math.max(tanHalfX, tanHalfY);
+      const edgeR2 = edgeTan * edgeTan;
+      const edgeFactor = 1.0 + this.k1 * edgeR2 + this.k2 * edgeR2 * edgeR2;
+      renderTanHalfY = tanHalfY * edgeFactor;
+      renderTanHalfX = tanHalfX * edgeFactor;
+      renderFov = THREE.MathUtils.radToDeg(2.0 * Math.atan(renderTanHalfY));
+    }
+
+    this.cameraL.aspect = aspect;
+    this.cameraL.fov = renderFov;
     this.cameraL.updateProjectionMatrix();
-    this.cameraR.fov = fovDegrees;
+
+    this.cameraR.aspect = aspect;
+    this.cameraR.fov = renderFov;
     this.cameraR.updateProjectionMatrix();
+
+    if (this.postUniforms) {
+      this.postUniforms.uK1.value = this.k1;
+      this.postUniforms.uK2.value = this.k2;
+      this.postUniforms.uTanHalf.value.set(tanHalfX, tanHalfY);
+      this.postUniforms.uRenderTanHalf.value.set(renderTanHalfX, renderTanHalfY);
+    }
   }
 
   initListeners() {
@@ -153,13 +316,11 @@ export class StereoRig {
     const width = window.innerWidth;
     const height = window.innerHeight;
     this.renderer.setSize(width, height);
+    this.updateProjectionAndUniforms();
 
-    const aspect = (width / 2) / height;
-    this.cameraL.aspect = aspect;
-    this.cameraL.updateProjectionMatrix();
-
-    this.cameraR.aspect = aspect;
-    this.cameraR.updateProjectionMatrix();
+    if (this.distortionEnabled) {
+      this.resizeDistortionTargets();
+    }
   }
 
   /**
@@ -219,12 +380,43 @@ export class StereoRig {
   }
 
   /**
-   * Render side-by-side split screen for JioDive
+   * Render side-by-side split screen for JioDive (with optional two-pass barrel distortion)
    */
   render() {
     const width = window.innerWidth;
     const height = window.innerHeight;
     const halfWidth = Math.floor(width / 2);
+
+    if (this.distortionEnabled) {
+      this.ensureDistortionPass();
+      this.renderer.setScissorTest(false);
+
+      // Pass 1: Render Left & Right eye views into isolated eye textures
+      this.renderer.setRenderTarget(this.rtL);
+      this.renderer.clear();
+      this.renderer.render(this.scene, this.cameraL);
+
+      this.renderer.setRenderTarget(this.rtR);
+      this.renderer.clear();
+      this.renderer.render(this.scene, this.cameraR);
+
+      // Pass 2: Output barrel-distorted views side-by-side onto screen
+      this.renderer.setRenderTarget(null);
+      this.renderer.setScissorTest(true);
+
+      this.renderer.setScissor(0, 0, halfWidth, height);
+      this.renderer.setViewport(0, 0, halfWidth, height);
+      this.postUniforms.tDiffuse.value = this.rtL.texture;
+      this.renderer.render(this.postScene, this.postCamera);
+
+      this.renderer.setScissor(halfWidth, 0, width - halfWidth, height);
+      this.renderer.setViewport(halfWidth, 0, width - halfWidth, height);
+      this.postUniforms.tDiffuse.value = this.rtR.texture;
+      this.renderer.render(this.postScene, this.postCamera);
+
+      this.renderer.setScissorTest(false);
+      return;
+    }
 
     this.renderer.setScissorTest(true);
 

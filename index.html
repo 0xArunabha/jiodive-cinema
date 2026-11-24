@@ -86,7 +86,8 @@
           <label for="ipd-select">Lens IPD Separation</label>
           <select id="ipd-select">
             <option value="0.058">58 mm (Narrow)</option>
-            <option value="0.064" selected>64 mm (Standard JioDive)</option>
+            <option value="0.062" selected>62 mm (Official JioDive)</option>
+            <option value="0.064">64 mm (Wide-Medium)</option>
             <option value="0.068">68 mm (Wide)</option>
             <option value="0.072">72 mm (Extra Wide)</option>
           </select>
@@ -95,8 +96,8 @@
           <label for="fov-select">Field of View (FOV)</label>
           <select id="fov-select">
             <option value="70">70° (Tighter / Sharper)</option>
-            <option value="75" selected>75° (Standard JioDive Lens)</option>
-            <option value="80">80° (Wide)</option>
+            <option value="75" selected>75° (Balanced Theater)</option>
+            <option value="80">80° (JioDive 40mm Lens)</option>
             <option value="85">85° (Immersive IMAX)</option>
           </select>
         </div>
@@ -115,6 +116,28 @@
             <option value="swapped">Swapped (Right-Left / Bottom-Top)</option>
           </select>
         </div>
+        <div class="setting-item">
+          <label for="distortion-select">Lens Barrel Distortion</label>
+          <select id="distortion-select">
+            <option value="jiodive" selected>On — JioDive Optics (k1=0.101, k2=0.098)</option>
+            <option value="off">Off — Flat Perspective</option>
+          </select>
+        </div>
+        <div class="setting-item">
+          <label for="brightness-select">Comfort Brightness</label>
+          <select id="brightness-select">
+            <option value="1" selected>100% (Full)</option>
+            <option value="0.8">80% (Balanced)</option>
+            <option value="0.6">60% (JioImmerse Thermal Cap)</option>
+          </select>
+        </div>
+        <div class="setting-item">
+          <label for="dwell-select">Hands-Free Gaze Dwell</label>
+          <select id="dwell-select">
+            <option value="off" selected>Off — Click / Controller Only</option>
+            <option value="1200">On — Look 1.2s to Click</option>
+          </select>
+        </div>
       </div>
 
       <!-- Launch Button -->
@@ -129,10 +152,10 @@
       <div class="tips-card">
         <h3>💡 JioDive Quick Controls</h3>
         <ul>
-          <li><strong>Physical Button:</strong> Click while aiming at buttons to select. Click in empty space to hide/show the menu.</li>
-          <li><strong>Double Click:</strong> Instantly recenters the screen if your phone drifts.</li>
-          <li><strong>Drift/Bed Mode:</strong> Toggle "Bed Mode" anytime to watch lying down flat.</li>
-          <li><strong>Exit VR:</strong> Click "🚪 Exit VR" on the in-VR floating panel or exit fullscreen to change movies.</li>
+          <li><strong>Physical Button / Gaze Dwell:</strong> Click while aiming, or enable <strong>⌛ Dwell 1.2s</strong> for hands-free control. Click empty space to hide/show the menu.</li>
+          <li><strong>Double Click:</strong> Instantly recenters the screen if your phone drifts (or press <strong>R</strong> / Gamepad X/Y).</li>
+          <li><strong>Bluetooth / Gamepad / Keys:</strong> Supports Xbox/PS/VR remotes + <strong>Space</strong>, <strong>Arrows</strong>, <strong>M</strong>, <strong>H</strong>, and <strong>Esc</strong>.</li>
+          <li><strong>Optics & Thermal Dimmer:</strong> Toggle calibrated JioDive lens distortion (<code>k1=0.101, k2=0.098</code>) and 60%–100% dimmer live in VR.</li>
           <li><strong>iOS Safari:</strong> Tap Share ➔ <em>"Add to Home Screen"</em> to run in true full screen without browser toolbars.</li>
         </ul>
       </div>
@@ -141,6 +164,9 @@
 
   <!-- The 3D Canvas -->
   <canvas id="vr-canvas"></canvas>
+
+  <!-- Comfort Brightness / Thermal Dimmer Overlay -->
+  <div id="vr-dimmer" class="vr-dimmer"></div>
 
   <!-- Video Element (Offscreen layout node, mapped to 3D texture) -->
   <video id="video-player" playsinline preload="auto" class="hidden-video-element"></video>
