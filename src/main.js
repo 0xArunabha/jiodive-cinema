@@ -23,6 +23,8 @@ const modeSelect = document.getElementById('mode-select');
 const envSelect = document.getElementById('env-select');
 const ipdSelect = document.getElementById('ipd-select');
 const fovSelect = document.getElementById('fov-select');
+const sizeSelect = document.getElementById('size-select');
+const swapEyesSelect = document.getElementById('swap-eyes-select');
 
 // Verified high-reliability sample video with full CORS support (VideoJS CDN)
 const DEMO_VIDEO_MP4 = 'https://vjs.zencdn.net/v/oceans.mp4';
@@ -187,22 +189,24 @@ if (btnClearSubtitles) {
   });
 }
 
-// Persistent Headset Optical Preferences (IPD & FOV)
+// Persistent Headset & Viewing Preferences (IPD, FOV, Screen Size)
 const PREFS_KEY = 'jiodive_prefs';
+
+function restoreSelectOption(selectEl, value, onApply) {
+  if (selectEl && value && Array.from(selectEl.options).some((o) => o.value === String(value))) {
+    selectEl.value = String(value);
+    onApply(selectEl.value);
+  }
+}
 
 function loadSavedPreferences() {
   try {
     const raw = localStorage.getItem(PREFS_KEY);
     if (!raw) return;
     const prefs = JSON.parse(raw);
-    if (ipdSelect && prefs.ipd && Array.from(ipdSelect.options).some((o) => o.value === String(prefs.ipd))) {
-      ipdSelect.value = String(prefs.ipd);
-      rig.setIPD(parseFloat(ipdSelect.value));
-    }
-    if (fovSelect && prefs.fov && Array.from(fovSelect.options).some((o) => o.value === String(prefs.fov))) {
-      fovSelect.value = String(prefs.fov);
-      rig.setFOV(parseFloat(fovSelect.value));
-    }
+    restoreSelectOption(ipdSelect, prefs.ipd, (v) => rig.setIPD(parseFloat(v)));
+    restoreSelectOption(fovSelect, prefs.fov, (v) => rig.setFOV(parseFloat(v)));
+    restoreSelectOption(sizeSelect, prefs.screenSize, (v) => cinemaScreen.setScreenPreset(v));
   } catch {
     // Ignore storage access errors in restricted modes
   }
@@ -214,7 +218,8 @@ function savePreferences() {
       PREFS_KEY,
       JSON.stringify({
         ipd: ipdSelect ? ipdSelect.value : '0.064',
-        fov: fovSelect ? fovSelect.value : '75'
+        fov: fovSelect ? fovSelect.value : '75',
+        screenSize: sizeSelect ? sizeSelect.value : 'standard'
       })
     );
   } catch {
@@ -223,8 +228,9 @@ function savePreferences() {
 }
 
 loadSavedPreferences();
-if (ipdSelect) ipdSelect.addEventListener('change', savePreferences);
-if (fovSelect) fovSelect.addEventListener('change', savePreferences);
+[ipdSelect, fovSelect, sizeSelect].forEach((el) => {
+  if (el) el.addEventListener('change', savePreferences);
+});
 
 // Screen Wake Lock
 async function requestWakeLock() {
@@ -333,8 +339,12 @@ btnEnterVr.addEventListener('click', () => {
 
   requestWakeLock().catch(() => {});
 
-  // Apply selected settings (Format, Environment, IPD, FOV)
+  // Apply selected settings (Eye Swap, Format, Screen Size, Environment, IPD, FOV)
+  cinemaScreen.setSwapEyes(Boolean(swapEyesSelect && swapEyesSelect.value === 'swapped'));
   cinemaScreen.setFormat(modeSelect.value);
+  if (sizeSelect) {
+    cinemaScreen.setScreenPreset(sizeSelect.value);
+  }
   environments.setEnvironment(envSelect.value, cinemaScreen, gazeUI);
 
   if (ipdSelect) {

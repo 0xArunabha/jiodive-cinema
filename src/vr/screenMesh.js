@@ -1,9 +1,15 @@
 import * as THREE from 'three';
 import { getActiveCueText } from './subtitleParser.js';
 
+export const SCREEN_PRESETS = {
+  imax: { distance: 5.2, curveDeg: 82, stageClearanceY: 0.68, label: '🏟 IMAX' },
+  standard: { distance: 6.5, curveDeg: 64, stageClearanceY: 0.55, label: '📐 Standard' },
+  balcony: { distance: 7.45, curveDeg: 44, stageClearanceY: 0.80, label: '🪑 Balcony' }
+};
+
 /**
  * Curved Virtual Cinema Screen Mesh
- * Supports 2D, 3D Half-SBS, 3D Full-SBS, 3D Half-OU, and 3D Full-OU video playback.
+ * Supports 2D, 3D Half/Full SBS & OU, L/R eye swapping, and screen distance presets.
  * Highly optimized: shares a single VideoTexture in 2D mode and avoids redundant per-frame GPU re-uploads.
  */
 export class CinemaScreen {
@@ -11,16 +17,17 @@ export class CinemaScreen {
     this.scene = scene;
     this.video = videoElement;
 
-    // Screen dimensions & placement
-    this.distance = 6.5; // 6.5 meters directly in front of camera
-    this.curveAngle = THREE.MathUtils.degToRad(64); // ~64 degree horizontal cinema arc
-    this.chordWidth = 2 * this.distance * Math.sin(this.curveAngle / 2); // ~6.88m wide
-    this.height = this.chordWidth / (16 / 9); // ~3.87m height for 16:9
-    this.format = '2d'; // '2d', '3d-hsbs', '3d-fsbs', '3d-hou', '3d-fou'
+    // Screen dimensions & preset state
+    this.screenPreset = 'standard';
+    const initialCfg = SCREEN_PRESETS.standard;
+    this.distance = initialCfg.distance;
+    this.curveAngle = THREE.MathUtils.degToRad(initialCfg.curveDeg);
+    this.chordWidth = 2 * this.distance * Math.sin(this.curveAngle / 2);
+    this.height = this.chordWidth / (16 / 9);
+    this.stageClearanceY = initialCfg.stageClearanceY;
 
-    // Stage clearance: Stage tops out at Y = 0.41m.
-    // Setting bottom edge to 0.55m gives a clean 14cm clearance above stage.
-    this.stageClearanceY = 0.55;
+    this.format = '2d'; // '2d', '3d-hsbs', '3d-fsbs', '3d-hou', '3d-fou'
+    this.swapEyes = false;
 
     // Standby canvas texture (shown before video starts or while loading)
     this.standbyTexture = this.createCanvasTexture(
@@ -126,14 +133,28 @@ export class CinemaScreen {
     this.materialR.needsUpdate = true;
   }
 
-  createScreenMeshes() {
-    const thetaStart = Math.PI - this.curveAngle / 2;
-
-    const geometry = new THREE.CylinderGeometry(
-      this.distance, this.distance, this.height, 48, 1, true, thetaStart, this.curveAngle
+  buildCurvedGeometry(radius, angleRad, height, segments = 48) {
+    const thetaStart = Math.PI - angleRad / 2;
+    const geom = new THREE.CylinderGeometry(
+      radius, radius, height, segments, 1, true, thetaStart, angleRad
     );
     // Invert X so the inside of cylinder faces camera at (0, 0, 0) and UVs run Left->Right
-    geometry.scale(-1, 1, 1);
+    geom.scale(-1, 1, 1);
+    return geom;
+  }
+
+  getSubtitleDims() {
+    const scaleFactor = this.distance / 6.5;
+    return {
+      radius: this.distance - 0.14,
+      angle: Math.min(THREE.MathUtils.degToRad(54), this.curveAngle * 0.68),
+      height: 0.9 * scaleFactor,
+      yOffset: -this.height / 2 + 0.56 * scaleFactor
+    };
+  }
+
+  createScreenMeshes() {
+    const geometry = this.buildCurvedGeometry(this.distance, this.curveAngle, this.height, 48);
 
     const initialMap = (this.video && this.video.readyState >= 2) ? this.videoTextureL : this.standbyTexture;
 
@@ -160,15 +181,12 @@ export class CinemaScreen {
     this.screenAnchor.add(this.meshR);
 
     // Screen Border / Frame
-    const borderDistance = this.distance + 0.05;
-    const borderAngle = this.curveAngle + THREE.MathUtils.degToRad(3);
-    const borderHeight = this.height + 0.28;
-    const borderThetaStart = Math.PI - borderAngle / 2;
-
-    const borderGeom = new THREE.CylinderGeometry(
-      borderDistance, borderDistance, borderHeight, 48, 1, true, borderThetaStart, borderAngle
+    const borderGeom = this.buildCurvedGeometry(
+      this.distance + 0.05,
+      this.curveAngle + THREE.MathUtils.degToRad(3),
+      this.height + 0.28,
+      48
     );
-    borderGeom.scale(-1, 1, 1);
     const borderMat = new THREE.MeshBasicMaterial({ color: 0x07080d, side: THREE.DoubleSide });
     this.frameMesh = new THREE.Mesh(borderGeom, borderMat);
     this.frameMesh.layers.set(0); // Visible to both eyes
@@ -186,15 +204,8 @@ export class CinemaScreen {
     this.subtitleTexture.magFilter = THREE.LinearFilter;
     this.subtitleTexture.colorSpace = THREE.SRGBColorSpace;
 
-    const subDistance = this.distance - 0.14;
-    const subAngle = THREE.MathUtils.degToRad(44);
-    const subHeight = 0.9;
-    const subThetaStart = Math.PI - subAngle / 2;
-
-    const subGeom = new THREE.CylinderGeometry(
-      subDistance, subDistance, subHeight, 32, 1, true, subThetaStart, subAngle
-    );
-    subGeom.scale(-1, 1, 1);
+    const sub = this.getSubtitleDims();
+    const subGeom = this.buildCurvedGeometry(sub.radius, sub.angle, sub.height, 32);
 
     const subMat = new THREE.MeshBasicMaterial({
       map: this.subtitleTexture,
@@ -205,7 +216,7 @@ export class CinemaScreen {
 
     this.subtitleMesh = new THREE.Mesh(subGeom, subMat);
     this.subtitleMesh.layers.set(0); // Render crisp stereo depth for both eyes
-    this.subtitleMesh.position.y = -this.height / 2 + 0.56;
+    this.subtitleMesh.position.y = sub.yOffset;
     this.subtitleMesh.renderOrder = 10;
     this.subtitleMesh.visible = false;
     this.screenAnchor.add(this.subtitleMesh);
@@ -250,33 +261,29 @@ export class CinemaScreen {
     });
   }
 
-  updateAspectRatio() {
+  getEffectiveAspectRatio() {
     if (this.video && this.video.videoWidth && this.video.videoHeight) {
       let aspect = this.video.videoWidth / this.video.videoHeight;
-      // Full SBS: file is 3840x1080 -> each eye is (width/2) / height
       if (this.format === '3d-fsbs') {
         aspect = (this.video.videoWidth / 2) / this.video.videoHeight;
-      }
-      // Half SBS (HSBS): file is 1920x1080 anamorphic (each eye squeezed 2:1 horizontally) -> display aspect is W/H (16:9)
-      else if (this.format === '3d-hsbs' || this.format === '3d-sbs') {
-        aspect = this.video.videoWidth / this.video.videoHeight;
-      }
-      // Full OU: file is 1920x2160 -> each eye is width / (height/2)
-      else if (this.format === '3d-fou') {
+      } else if (this.format === '3d-fou') {
         aspect = this.video.videoWidth / (this.video.videoHeight / 2);
       }
-      // Half OU (HOU): file is 1920x1080 anamorphic (each eye squeezed 2:1 vertically) -> display aspect is W/H (16:9)
-      else if (this.format === '3d-hou' || this.format === '3d-ou') {
-        aspect = this.video.videoWidth / this.video.videoHeight;
-      }
-
       if (aspect > 0 && isFinite(aspect)) {
-        const targetHeight = this.chordWidth / aspect;
-        const clampedHeight = Math.max(2.2, Math.min(5.5, targetHeight));
-        if (Math.abs(this.height - clampedHeight) > 0.05) {
-          this.height = clampedHeight;
-          this.rebuildGeometry();
-        }
+        return aspect;
+      }
+    }
+    return 16 / 9;
+  }
+
+  updateAspectRatio() {
+    if (this.video && this.video.videoWidth && this.video.videoHeight) {
+      const aspect = this.getEffectiveAspectRatio();
+      const targetHeight = this.chordWidth / aspect;
+      const clampedHeight = Math.max(2.0, Math.min(5.5, targetHeight));
+      if (Math.abs(this.height - clampedHeight) > 0.05) {
+        this.height = clampedHeight;
+        this.rebuildGeometry();
       }
     }
   }
@@ -287,12 +294,7 @@ export class CinemaScreen {
       this.screenAnchor.position.y = (this.stageClearanceY + this.height / 2) - 1.4;
     }
 
-    const thetaStart = Math.PI - this.curveAngle / 2;
-
-    const newGeom = new THREE.CylinderGeometry(
-      this.distance, this.distance, this.height, 48, 1, true, thetaStart, this.curveAngle
-    );
-    newGeom.scale(-1, 1, 1);
+    const newGeom = this.buildCurvedGeometry(this.distance, this.curveAngle, this.height, 48);
 
     if (this.meshL) {
       this.meshL.geometry.dispose();
@@ -303,22 +305,45 @@ export class CinemaScreen {
       this.meshR.geometry = newGeom.clone();
     }
 
-    const borderDistance = this.distance + 0.05;
-    const borderAngle = this.curveAngle + THREE.MathUtils.degToRad(3);
-    const borderHeight = this.height + 0.28;
-    const borderThetaStart = Math.PI - borderAngle / 2;
-
-    const borderGeom = new THREE.CylinderGeometry(
-      borderDistance, borderDistance, borderHeight, 48, 1, true, borderThetaStart, borderAngle
+    const borderGeom = this.buildCurvedGeometry(
+      this.distance + 0.05,
+      this.curveAngle + THREE.MathUtils.degToRad(3),
+      this.height + 0.28,
+      48
     );
-    borderGeom.scale(-1, 1, 1);
     if (this.frameMesh) {
       this.frameMesh.geometry.dispose();
       this.frameMesh.geometry = borderGeom;
     }
     if (this.subtitleMesh) {
-      this.subtitleMesh.position.y = -this.height / 2 + 0.56;
+      const sub = this.getSubtitleDims();
+      this.subtitleMesh.geometry.dispose();
+      this.subtitleMesh.geometry = this.buildCurvedGeometry(sub.radius, sub.angle, sub.height, 32);
+      this.subtitleMesh.position.y = sub.yOffset;
     }
+  }
+
+  setScreenPreset(presetName) {
+    const cfg = SCREEN_PRESETS[presetName] || SCREEN_PRESETS.standard;
+    this.screenPreset = SCREEN_PRESETS[presetName] ? presetName : 'standard';
+    this.distance = cfg.distance;
+    this.curveAngle = THREE.MathUtils.degToRad(cfg.curveDeg);
+    this.stageClearanceY = cfg.stageClearanceY;
+    this.chordWidth = 2 * this.distance * Math.sin(this.curveAngle / 2);
+
+    const aspect = this.getEffectiveAspectRatio();
+    this.height = Math.max(2.0, Math.min(5.5, this.chordWidth / aspect));
+    this.rebuildGeometry();
+  }
+
+  setSwapEyes(swapped) {
+    this.swapEyes = Boolean(swapped);
+    this.setFormat(this.format);
+  }
+
+  toggleSwapEyes() {
+    this.setSwapEyes(!this.swapEyes);
+    return this.swapEyes;
   }
 
   /**
@@ -338,21 +363,21 @@ export class CinemaScreen {
       }
 
       if (format === '3d-hsbs' || format === '3d-fsbs' || format === '3d-sbs') {
-        // Left eye sees left half: UV [0.0, 0.5]
+        const leftX = this.swapEyes ? 0.5 : 0;
+        const rightX = this.swapEyes ? 0 : 0.5;
         this.videoTextureL.repeat.set(0.5, 1);
-        this.videoTextureL.offset.set(0, 0);
+        this.videoTextureL.offset.set(leftX, 0);
 
-        // Right eye sees right half: UV [0.5, 1.0]
         this.videoTextureR.repeat.set(0.5, 1);
-        this.videoTextureR.offset.set(0.5, 0);
+        this.videoTextureR.offset.set(rightX, 0);
       } else if (format === '3d-hou' || format === '3d-fou' || format === '3d-ou') {
-        // Left eye sees top half
+        const leftY = this.swapEyes ? 0 : 0.5;
+        const rightY = this.swapEyes ? 0.5 : 0;
         this.videoTextureL.repeat.set(1, 0.5);
-        this.videoTextureL.offset.set(0, 0.5);
+        this.videoTextureL.offset.set(0, leftY);
 
-        // Right eye sees bottom half
         this.videoTextureR.repeat.set(1, 0.5);
-        this.videoTextureR.offset.set(0, 0);
+        this.videoTextureR.offset.set(0, rightY);
       }
 
       if (this.materialL.map !== this.standbyTexture) {

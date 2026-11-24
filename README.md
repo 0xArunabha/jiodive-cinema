@@ -23,19 +23,21 @@ A static, browser-based Virtual Reality Theater player built with Three.js and V
   - 🏛 **Grand Cinema Hall:** Multi-tier theater with curved screen, amber aisle runner LED strips, stage clearance, and real-time screen light bounce.
   - 🌌 **Void Mode (OLED):** Pure pitch black space with floating screen (skips environment lighting updates and minimizes pixel draw for mobile battery life).
   - 🛏 **Bed Mode:** Screen and control menu reorient upward together onto the ceiling so you can watch lying flat.
-- **Comprehensive 3D Format Support:**
+- **Screen Distance / Seat Row Presets:** Switch live in VR or the launcher between **Front IMAX** (`5.2m`, immersive `82°` wrap), **Standard** (`6.5m`, `64°`), and **Balcony** (`7.45m`, compact `44°`), automatically scaling the screen, frame, subtitles, and dynamic reticle depth.
+- **Comprehensive 3D Format Support & L/R Eye Swap:**
   - Standard 2D movies (shared single `VideoTexture` for minimal GPU upload overhead).
   - 3D Half Side-by-Side (Half-SBS) with 2:1 anamorphic aspect correction.
   - 3D Full Side-by-Side (Full-SBS).
   - 3D Half Over-Under (Half-OU) with 2:1 anamorphic aspect correction.
   - 3D Full Over-Under (Full-OU).
+  - Live **3D Eye Swap** (`🔀 L/R` ➔ `🔀 R/L`) to fix inverted Right-Left / Bottom-Top 3D encodes.
 - **Interactive Timeline & Scrubbing:** Floating gaze seek bar with hover time preview (`➔ MM:SS`) and current/total duration readout directly inside VR, plus `⏪ -10s` / `⏩ +10s` quick skips.
 - **VR Subtitles (`.srt` / `.vtt`):** Load local `.srt` or `.vtt` subtitle files in the launcher to render stereo-converged captions on a curved layer just in front of the cinema screen (works in 2D, 3D SBS/OU, and Bed Mode, with live `💬 CC On/Off` toggling in VR).
 - **Local Files & Online URL Streaming:**
   - Load local video files (MP4 H.264/AAC, WebM) directly from device storage.
   - Stream CORS-enabled online video URLs (`https://...`).
   - Built-in Oceans HD sample stream with automatic MP4/WebM codec selection.
-- **Clean In-VR Navigation & Saved Fit:** Switch rooms, toggle formats, cycle IPD (automatically saved across sessions), or click `🚪 Exit VR` anytime to return to the launcher without reloading.
+- **Clean In-VR Navigation & Saved Fit:** Switch rooms, resize screen presets, toggle 3D formats/eye order, cycle IPD (saved automatically alongside FOV and seat preference), or click `🚪 Exit VR` anytime without reloading.
 - **Screen Wake-Lock & Non-Blocking Entry:** Keeps the display awake while watching, re-acquires wake lock on `visibilitychange`, and enters VR immediately without stalling on WebView fullscreen/wake-lock promises.
 - **Mobile-Optimized Performance:** Lambert shading with baked sconce glow textures, no redundant per-frame `VideoTexture` uploads, paused 3D render loop behind the 2D launcher.
 
@@ -94,6 +96,8 @@ Open the Network URL on your phone over the same Wi-Fi network *(accept the loca
 | **Recenter Screen (Fix Drift)** | **Double-click** the physical button quickly (< 350ms). |
 | **Seek Timeline** | Aim anywhere along the top progress bar (displays `➔ MM:SS` preview) and **click** to jump directly to that timestamp. |
 | **Toggle Subtitles** | Click **💬 CC** in the top bar (`On` / `Off`) after loading an `.srt` or `.vtt` file in the launcher. |
+| **Screen Size / Distance** | Click **📐 Standard** to cycle between **🏟 IMAX**, **📐 Standard**, and **🪑 Balcony**. |
+| **Swap 3D Eyes** | Click **🔀 L/R** to flip Left/Right or Top/Bottom halves (`🔀 R/L`) for inverted 3D files. |
 | **Cycle IPD** | Click **👁 IPD** in the VR menu (58mm ➔ 64mm ➔ 68mm ➔ 72mm). |
 | **Cycle Format** | Click **🕶 Format** in the VR menu (2D ➔ Half-SBS ➔ Full-SBS ➔ Half-OU ➔ Full-OU). |
 | **Bed / Lay-Down Mode** | Click **🛏 Bed Mode** to tilt both screen and menu upward together. |

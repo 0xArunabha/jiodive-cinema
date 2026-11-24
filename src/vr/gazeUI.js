@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { SCREEN_PRESETS } from './screenMesh.js';
 
 /**
  * In-VR Floating Gaze & Physical Click UI
@@ -62,11 +63,11 @@ export class GazeUI {
     // Position floating panel comfortably in lower gaze view, scaled to clear armrests & fit all aspect ratios
     this.menuGroup.position.set(0, 0.36, -4.5);
     this.menuGroup.rotation.x = -0.2;
-    this.menuGroup.scale.set(0.75, 0.75, 0.75);
+    this.menuGroup.scale.set(0.73, 0.73, 0.73);
     this.rig.scene.add(this.menuGroup);
 
-    // Background Plate (accommodates top seek bar row + 2 button rows)
-    const bgGeom = new THREE.PlaneGeometry(3.8, 1.02);
+    // Background Plate (accommodates top seek bar row + 2 6-button rows)
+    const bgGeom = new THREE.PlaneGeometry(3.96, 1.02);
     const bgMat = new THREE.MeshBasicMaterial({
       color: 0x0c0e17,
       transparent: true,
@@ -79,48 +80,36 @@ export class GazeUI {
     // Top Row (y = 0.33): Interactive Seek Bar + Time Readout + CC Toggle
     this.createSeekBarRow();
 
-    // Row 1 Buttons (y = 0.04)
-    const row1 = [
-      { id: 'rw', label: '⏪ -10s', x: -1.4, y: 0.04, action: () => this.seek(-10) },
-      { id: 'play', label: '▶ Play', x: -0.7, y: 0.04, action: () => this.togglePlay() },
-      { id: 'ff', label: '⏩ +10s', x: 0.0, y: 0.04, action: () => this.seek(10) },
-      { id: 'env', label: '🏛 Room', x: 0.7, y: 0.04, action: () => this.cycleEnvironment() },
-      { id: 'recenter', label: '🎯 Recenter', x: 1.4, y: 0.04, action: () => this.rig.recenter() }
+    const ipdMm = Math.round(this.rig.ipd * 1000);
+    const buttons = [
+      // Row 1 (y = 0.04) - Playback, Scene & Screen Size
+      { label: '⏪ -10s', x: -1.55, y: 0.04, action: () => this.seek(-10) },
+      { label: '▶ Play', x: -0.93, y: 0.04, action: () => this.togglePlay(), ref: 'playBtnMesh' },
+      { label: '⏩ +10s', x: -0.31, y: 0.04, action: () => this.seek(10) },
+      { label: '🏛 Room', x: 0.31, y: 0.04, action: () => this.cycleEnvironment() },
+      { label: '📐 Standard', x: 0.93, y: 0.04, action: () => this.cycleScreenPreset(), ref: 'sizeBtnMesh' },
+      { label: '🎯 Recenter', x: 1.55, y: 0.04, action: () => this.rig.recenter() },
+      // Row 2 (y = -0.26) - Audio, 3D Format, Eye Swap, IPD, Bed & Exit
+      { label: '🔊 Sound', x: -1.55, y: -0.26, action: () => this.toggleAudio(), ref: 'audioBtnMesh' },
+      { label: '🕶 2D', x: -0.93, y: -0.26, action: () => this.cycleFormat(), ref: 'formatBtnMesh' },
+      { label: '🔀 L/R', x: -0.31, y: -0.26, action: () => this.toggleSwapEyes(), ref: 'swapBtnMesh' },
+      { label: `👁 ${ipdMm}mm`, x: 0.31, y: -0.26, action: () => this.cycleIPD(), ref: 'ipdBtnMesh' },
+      { label: '🛏 Bed', x: 0.93, y: -0.26, action: () => this.toggleBedMode() },
+      { label: '🚪 Exit', x: 1.55, y: -0.26, action: () => this.exitVR() }
     ];
 
-    row1.forEach((b) => {
-      const btnMesh = this.createButtonMesh(b.label, b.x, b.y, b.action);
+    buttons.forEach((b) => {
+      const btnMesh = this.createButtonMesh(b.label, b.x, b.y, b.action, {
+        width: 0.56,
+        height: 0.2,
+        fontSize: 23
+      });
       this.menuGroup.add(btnMesh);
       this.interactiveObjects.push(btnMesh);
-      if (b.id === 'play') {
-        this.playBtnMesh = btnMesh;
+      if (b.ref) {
+        this[b.ref] = btnMesh;
       }
     });
-
-    // Row 2 Buttons (y = -0.26)
-    const audioBtn = this.createButtonMesh('🔊 Sound', -1.4, -0.26, () => this.toggleAudio());
-    this.menuGroup.add(audioBtn);
-    this.interactiveObjects.push(audioBtn);
-    this.audioBtnMesh = audioBtn;
-
-    const formatBtn = this.createButtonMesh('🕶 2D', -0.7, -0.26, () => this.cycleFormat());
-    this.menuGroup.add(formatBtn);
-    this.interactiveObjects.push(formatBtn);
-    this.formatBtnMesh = formatBtn;
-
-    const ipdMm = Math.round(this.rig.ipd * 1000);
-    const ipdBtn = this.createButtonMesh(`👁 ${ipdMm}mm`, 0.0, -0.26, () => this.cycleIPD());
-    this.menuGroup.add(ipdBtn);
-    this.interactiveObjects.push(ipdBtn);
-    this.ipdBtnMesh = ipdBtn;
-
-    const bedBtn = this.createButtonMesh('🛏 Bed Mode', 0.7, -0.26, () => this.toggleBedMode());
-    this.menuGroup.add(bedBtn);
-    this.interactiveObjects.push(bedBtn);
-
-    const exitBtn = this.createButtonMesh('🚪 Exit VR', 1.4, -0.26, () => this.exitVR());
-    this.menuGroup.add(exitBtn);
-    this.interactiveObjects.push(exitBtn);
   }
 
   createSeekBarRow() {
@@ -130,10 +119,10 @@ export class GazeUI {
     seekCanvas.height = 48;
     const seekTex = new THREE.CanvasTexture(seekCanvas);
     seekTex.colorSpace = THREE.SRGBColorSpace;
-    const seekGeom = new THREE.PlaneGeometry(2.26, 0.14);
+    const seekGeom = new THREE.PlaneGeometry(2.34, 0.14);
     const seekMat = new THREE.MeshBasicMaterial({ map: seekTex, transparent: true, side: THREE.DoubleSide });
     this.seekBarMesh = new THREE.Mesh(seekGeom, seekMat);
-    this.seekBarMesh.position.set(-0.62, 0.33, 0.02);
+    this.seekBarMesh.position.set(-0.66, 0.33, 0.02);
     this.seekBarMesh.userData = {
       isSeekBar: true,
       noHoverScale: true,
@@ -149,10 +138,10 @@ export class GazeUI {
     timeCanvas.height = 48;
     const timeTex = new THREE.CanvasTexture(timeCanvas);
     timeTex.colorSpace = THREE.SRGBColorSpace;
-    const timeGeom = new THREE.PlaneGeometry(0.72, 0.14);
+    const timeGeom = new THREE.PlaneGeometry(0.74, 0.14);
     const timeMat = new THREE.MeshBasicMaterial({ map: timeTex, transparent: true, side: THREE.DoubleSide });
     this.timeMesh = new THREE.Mesh(timeGeom, timeMat);
-    this.timeMesh.position.set(0.92, 0.33, 0.02);
+    this.timeMesh.position.set(0.94, 0.33, 0.02);
     this.timeMesh.userData = {
       canvas: timeCanvas,
       ctx: timeCanvas.getContext('2d')
@@ -160,12 +149,12 @@ export class GazeUI {
     this.menuGroup.add(this.timeMesh);
 
     // 3. Subtitle Toggle Button
-    const ccBtn = this.createButtonMesh('💬 CC', 1.54, 0.33, () => this.toggleSubtitles(), {
-      width: 0.42,
+    const ccBtn = this.createButtonMesh('💬 CC', 1.60, 0.33, () => this.toggleSubtitles(), {
+      width: 0.46,
       height: 0.14,
-      canvasW: 160,
+      canvasW: 168,
       canvasH: 56,
-      fontSize: 22
+      fontSize: 21
     });
     this.menuGroup.add(ccBtn);
     this.interactiveObjects.push(ccBtn);
@@ -372,6 +361,19 @@ export class GazeUI {
     this.syncSelect('mode-select', next);
   }
 
+  cycleScreenPreset() {
+    const presets = ['imax', 'standard', 'balcony'];
+    const next = presets[(presets.indexOf(this.screen.screenPreset) + 1) % presets.length];
+    this.screen.setScreenPreset(next);
+    this.syncSelect('size-select', next);
+  }
+
+  toggleSwapEyes() {
+    if (!this.screen) return;
+    const swapped = this.screen.toggleSwapEyes();
+    this.syncSelect('swap-eyes-select', swapped ? 'swapped' : 'normal');
+  }
+
   cycleIPD() {
     const ipdValues = [0.058, 0.064, 0.068, 0.072];
     const currentIndex = ipdValues.findIndex(v => Math.abs(v - this.rig.ipd) < 0.001);
@@ -572,6 +574,20 @@ export class GazeUI {
         if (this.ipdBtnMesh.userData.currentText !== expectedIpd) {
           this.updateButtonText(this.ipdBtnMesh, expectedIpd);
         }
+      }
+    }
+
+    if (this.sizeBtnMesh && this.screen) {
+      const sizeLabel = SCREEN_PRESETS[this.screen.screenPreset]?.label || '📐 Standard';
+      if (this.sizeBtnMesh.userData.currentText !== sizeLabel) {
+        this.updateButtonText(this.sizeBtnMesh, sizeLabel);
+      }
+    }
+
+    if (this.swapBtnMesh && this.screen) {
+      const swapLabel = this.screen.swapEyes ? '🔀 R/L' : '🔀 L/R';
+      if (this.swapBtnMesh.userData.currentText !== swapLabel) {
+        this.updateButtonText(this.swapBtnMesh, swapLabel);
       }
     }
 
