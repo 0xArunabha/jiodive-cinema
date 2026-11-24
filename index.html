@@ -15,12 +15,13 @@
   <link rel="stylesheet" href="./src/style.css" />
 </head>
 <body>
-  <!-- 2D Launch / Control Screen before entering VR -->
+  <!-- Native Android-style 2D Cinema Lobby (Portrait-first; rotates to landscape upon VR entry) -->
   <div id="launcher" class="launcher-overlay">
-    <main class="launcher-card">
-      <header class="header">
-        <div class="brand-lockup">
-          <svg class="brand-crest" width="76" height="54" viewBox="86 110 340 250" fill="none" aria-hidden="true">
+    <div class="app-shell">
+      <!-- Sticky Top App Bar -->
+      <header class="app-bar">
+        <div class="app-brand">
+          <svg class="brand-crest" width="42" height="30" viewBox="86 110 340 250" fill="none" aria-hidden="true">
             <defs>
               <linearGradient id="jdArcGrad" x1="0%" y1="0%" x2="100%" y2="0%">
                 <stop offset="0%" stop-color="#38bdf8" stop-opacity="0" />
@@ -50,203 +51,207 @@
                 <stop offset="50%" stop-color="#818cf8" />
                 <stop offset="100%" stop-color="#6366f1" />
               </linearGradient>
-              <linearGradient id="jdSheen" x1="0%" y1="0%" x2="100%" y2="100%">
-                <stop offset="0%" stop-color="#ffffff" stop-opacity="0.32" />
-                <stop offset="52%" stop-color="#ffffff" stop-opacity="0.06" />
-                <stop offset="100%" stop-color="#ffffff" stop-opacity="0" />
-              </linearGradient>
-              <clipPath id="jdClipL">
-                <rect x="138" y="204" width="94" height="86" rx="22" />
-              </clipPath>
-              <clipPath id="jdClipR">
-                <rect x="280" y="204" width="94" height="86" rx="22" />
-              </clipPath>
             </defs>
-
-            <path d="M 116 146 Q 256 116 396 146" stroke="url(#jdArcGrad)" stroke-width="14" stroke-linecap="round" opacity="0.22" />
-            <path d="M 122 146 Q 256 117 390 146" stroke="url(#jdArcGrad)" stroke-width="5" stroke-linecap="round" />
+            <path d="M 122 146 Q 256 117 390 146" stroke="url(#jdArcGrad)" stroke-width="6" stroke-linecap="round" />
             <path
               d="M 150 174 Q 256 162 362 174 C 396 178 408 196 408 230 L 404 292 C 402 328 380 348 340 348 C 304 348 286 304 256 304 C 226 304 208 348 172 348 C 132 348 110 328 108 292 L 104 230 C 104 196 116 178 150 174 Z"
               fill="url(#jdShellGrad)"
               stroke="url(#jdRimGrad)"
-              stroke-width="10.5"
+              stroke-width="11"
               stroke-linejoin="round"
             />
-            <path d="M 142 186 Q 256 173 370 186" stroke="#ffffff" stroke-opacity="0.18" stroke-width="2.5" stroke-linecap="round" />
-
             <rect x="138" y="204" width="94" height="86" rx="22" fill="url(#jdLensL)" />
-            <g clip-path="url(#jdClipL)">
-              <polygon points="128,198 198,198 148,296 128,296" fill="url(#jdSheen)" />
-              <path d="M 144 272 Q 185 264 226 272" stroke="#ffffff" stroke-opacity="0.18" stroke-width="2" stroke-linecap="round" />
-            </g>
-
             <rect x="280" y="204" width="94" height="86" rx="22" fill="url(#jdLensR)" />
-            <g clip-path="url(#jdClipR)">
-              <polygon points="270,198 340,198 290,296 270,296" fill="url(#jdSheen)" />
-              <path d="M 286 272 Q 327 264 368 272" stroke="#ffffff" stroke-opacity="0.18" stroke-width="2" stroke-linecap="round" />
-            </g>
           </svg>
-          <div class="brand-copy">
-            <span class="logo-badge">JioDive VR</span>
-            <h1>Virtual Cinema</h1>
-            <p class="subtitle">Curved IMAX &amp; 3D theater for your JioDive headset</p>
+          <div class="app-brand-text">
+            <h1>JioDive Cinema</h1>
+            <span class="app-subtitle">VR Theater Player</span>
           </div>
+        </div>
+
+        <div class="app-bar-actions">
+          <button type="button" id="btn-open-optics" class="icon-circle-btn" aria-label="Headset and optics settings" aria-haspopup="dialog">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <circle cx="12" cy="12" r="3" />
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9c.26.6.79 1.02 1.44 1.08H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z" />
+            </svg>
+          </button>
+          <button type="button" id="btn-open-tips" class="icon-circle-btn" aria-label="Controls and headset guide" aria-haspopup="dialog">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <circle cx="12" cy="12" r="10" />
+              <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
+              <line x1="12" y1="17" x2="12.01" y2="17" />
+            </svg>
+          </button>
         </div>
       </header>
 
-      <!-- Step 1: Movie Source (Tabbed) & Subtitles -->
-      <section class="card-block source-section">
-        <div class="block-header">
-          <h2 class="section-title">Movie Source</h2>
-          <div class="subtitle-chip-group">
-            <input type="file" id="subtitle-file-input" class="visually-hidden" accept=".srt,.vtt,text/vtt" />
-            <label for="subtitle-file-input" class="chip-btn" id="subtitle-chip-label">
-              <svg class="icon-svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <rect x="2" y="5" width="20" height="14" rx="3" />
-                <path d="M7 12h4M7 15h2M13 12h4M15 15h2" />
+      <!-- Scrollable App Feed -->
+      <main class="app-feed">
+        <!-- Hero Virtual Stage Card (Visual preview of theater + currently queued media) -->
+        <div id="stage-preview" class="stage-hero" data-env="cinema">
+          <div class="stage-visual" aria-hidden="true">
+            <div class="stage-glow"></div>
+            <svg class="stage-screen-svg" viewBox="0 0 320 120" fill="none">
+              <path class="svg-screen-frame" d="M 38 22 Q 160 38 282 22 L 282 88 Q 160 100 38 88 Z" />
+              <path class="svg-screen-horizon" d="M 48 34 Q 160 47 272 34" />
+              <path class="svg-stage-ledge" d="M 18 106 Q 160 114 302 106" />
+            </svg>
+            <span id="hero-env-badge" class="stage-room-pill">Cinema Hall · Standard</span>
+          </div>
+
+          <div class="stage-footer">
+            <div class="stage-now-playing">
+              <strong id="hero-source-title">No Video Selected</strong>
+              <span id="hero-source-meta">Choose a local file, URL, or demo below</span>
+            </div>
+            <div class="subtitle-chip-group">
+              <input type="file" id="subtitle-file-input" class="visually-hidden" accept=".srt,.vtt,text/vtt" />
+              <label for="subtitle-file-input" class="chip-btn" id="subtitle-chip-label">
+                <svg class="icon-svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <rect x="2" y="5" width="20" height="14" rx="3" />
+                  <path d="M7 12h4M7 15h2M13 12h4M15 15h2" />
+                </svg>
+                <span id="subtitle-btn-text">CC</span>
+              </label>
+              <button type="button" id="btn-clear-subtitles" class="chip-clear hidden" aria-label="Remove loaded subtitles">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true">
+                  <path d="M18 6 6 18M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Source Picker Tabs + Panel -->
+        <section class="feed-section source-section">
+          <h2 class="section-label">Select Media</h2>
+          <div class="source-tabs" role="tablist" aria-label="Movie source">
+            <button type="button" role="tab" id="tab-local" class="source-tab" aria-selected="true" tabindex="0" data-panel="panel-local">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9l-.81-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z" />
               </svg>
-              <span id="subtitle-btn-text">Add Subtitles</span>
-            </label>
-            <button type="button" id="btn-clear-subtitles" class="chip-clear hidden" aria-label="Remove loaded subtitles">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true">
-                <path d="M18 6 6 18M6 6l12 12" />
+              <span>Device</span>
+            </button>
+            <button type="button" role="tab" id="tab-stream" class="source-tab" aria-selected="false" tabindex="-1" data-panel="panel-stream">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <circle cx="12" cy="12" r="10" />
+                <path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10Z" />
               </svg>
+              <span>Stream URL</span>
+            </button>
+            <button type="button" role="tab" id="tab-demo" class="source-tab" aria-selected="false" tabindex="-1" data-panel="panel-demo">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <circle cx="12" cy="12" r="10" />
+                <polygon points="10 8 16 12 10 16 10 8" fill="currentColor" stroke="none" />
+              </svg>
+              <span>Demo</span>
             </button>
           </div>
-        </div>
 
-        <div class="source-tabs" role="tablist" aria-label="Movie source">
-          <button type="button" role="tab" id="tab-local" class="source-tab" aria-selected="true" tabindex="0" data-panel="panel-local">
-            <svg class="icon-svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9l-.81-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z" />
-            </svg>
-            <span>Local File</span>
-          </button>
-          <button type="button" role="tab" id="tab-stream" class="source-tab" aria-selected="false" tabindex="-1" data-panel="panel-stream">
-            <svg class="icon-svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <circle cx="12" cy="12" r="10" />
-              <path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10Z" />
-            </svg>
-            <span>Stream URL</span>
-          </button>
-          <button type="button" role="tab" id="tab-demo" class="source-tab" aria-selected="false" tabindex="-1" data-panel="panel-demo">
-            <svg class="icon-svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <circle cx="12" cy="12" r="10" />
-              <polygon points="10 8 16 12 10 16 10 8" fill="currentColor" stroke="none" />
-            </svg>
-            <span>Demo Clip</span>
-          </button>
-        </div>
+          <div class="tab-panels-stage">
+            <div id="panel-local" role="tabpanel" aria-labelledby="tab-local" class="source-panel">
+              <div class="source-panel-box">
+                <input type="file" id="video-file-input" class="visually-hidden" accept="video/mp4,video/webm,video/ogg,video/quicktime,.mp4,.webm,.m4v,.mov,.mkv" aria-describedby="local-format-hint" />
+                <label for="video-file-input" id="file-dropzone" class="file-dropzone">
+                  <span class="dropzone-icon" aria-hidden="true">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                      <polyline points="17 8 12 3 7 8" />
+                      <line x1="12" y1="3" x2="12" y2="15" />
+                    </svg>
+                  </span>
+                  <span class="dropzone-copy">
+                    <strong>Browse phone videos</strong>
+                    <span id="local-format-hint" class="dropzone-hint">MP4 (H.264 / AAC) or WebM · Instant local playback</span>
+                  </span>
+                </label>
+              </div>
+            </div>
 
-        <div class="tab-panels-stage">
-          <div id="panel-local" role="tabpanel" aria-labelledby="tab-local" class="source-panel">
-            <div class="source-panel-box">
-              <input type="file" id="video-file-input" class="visually-hidden" accept="video/mp4,video/webm,video/ogg,video/quicktime,.mp4,.webm,.m4v,.mov,.mkv" aria-describedby="local-format-hint" />
-              <label for="video-file-input" id="file-dropzone" class="file-dropzone">
-                <span class="dropzone-icon" aria-hidden="true">
-                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                    <polyline points="17 8 12 3 7 8" />
-                    <line x1="12" y1="3" x2="12" y2="15" />
-                  </svg>
-                </span>
-                <span class="dropzone-copy">
-                  <strong>Choose a video from your device</strong>
-                  <span id="local-format-hint" class="dropzone-hint">Supports MP4 (H.264 / AAC) and WebM · Plays locally, zero upload</span>
-                </span>
+            <div id="panel-stream" role="tabpanel" aria-labelledby="tab-stream" class="source-panel" hidden="until-found">
+              <div class="source-panel-box">
+                <label for="stream-url-input" class="visually-hidden">Video Stream URL</label>
+                <div class="url-input-container">
+                  <input
+                    type="url"
+                    id="stream-url-input"
+                    class="text-input"
+                    placeholder="https://example.com/movie.mp4"
+                    autocorrect="off"
+                    autocapitalize="none"
+                    spellcheck="false"
+                    enterkeyhint="go"
+                    aria-describedby="stream-url-hint"
+                  />
+                  <button type="button" id="btn-load-url" class="secondary-btn">Load</button>
+                </div>
+                <p id="stream-url-hint" class="panel-hint">Requires a direct MP4/WebM link with CORS enabled.</p>
+              </div>
+            </div>
+
+            <div id="panel-demo" role="tabpanel" aria-labelledby="tab-demo" class="source-panel" hidden="until-found">
+              <div class="source-panel-box demo-box">
+                <div class="demo-copy">
+                  <strong>Oceans HD Sample</strong>
+                  <span>Instant CORS-ready test clip</span>
+                </div>
+                <button type="button" id="btn-load-demo" class="secondary-btn">Load Clip</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="status-stack" aria-live="polite" role="status">
+            <div id="file-info" class="status-banner hidden"></div>
+            <div id="subtitle-info" class="status-banner hidden"></div>
+          </div>
+        </section>
+
+        <!-- Theater Environment Visual Cards -->
+        <fieldset class="env-fieldset">
+          <legend class="section-label">Theater Environment</legend>
+          <div class="env-cards">
+            <div class="env-card-item">
+              <input type="radio" id="env-cinema" name="env" value="cinema" class="visually-hidden" checked />
+              <label for="env-cinema" class="env-card-label">
+                <svg class="env-icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M2 7h20v11H2z" />
+                  <path d="M7 18v3M17 18v3M4 11h16" />
+                </svg>
+                <strong>Cinema</strong>
+                <span>IMAX seats</span>
               </label>
             </div>
-          </div>
-
-          <div id="panel-stream" role="tabpanel" aria-labelledby="tab-stream" class="source-panel" hidden="until-found">
-            <div class="source-panel-box">
-              <label for="stream-url-input" class="visually-hidden">Video Stream URL</label>
-              <div class="url-input-container">
-                <input
-                  type="url"
-                  id="stream-url-input"
-                  class="text-input"
-                  placeholder="https://example.com/movie.mp4"
-                  autocorrect="off"
-                  autocapitalize="none"
-                  spellcheck="false"
-                  enterkeyhint="go"
-                  aria-describedby="stream-url-hint"
-                />
-                <button type="button" id="btn-load-url" class="secondary-btn">Load</button>
-              </div>
-              <p id="stream-url-hint" class="panel-hint">Paste a direct MP4 or WebM link from a CORS-enabled HTTPS server.</p>
+            <div class="env-card-item">
+              <input type="radio" id="env-void" name="env" value="void" class="visually-hidden" />
+              <label for="env-void" class="env-card-label">
+                <svg class="env-icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <circle cx="12" cy="12" r="9" />
+                  <path d="M7 10.5Q12 12 17 10.5v3.5Q12 15.5 7 14Z" />
+                </svg>
+                <strong>Void</strong>
+                <span>OLED black</span>
+              </label>
             </div>
-          </div>
-
-          <div id="panel-demo" role="tabpanel" aria-labelledby="tab-demo" class="source-panel" hidden="until-found">
-            <div class="source-panel-box demo-box">
-              <div class="demo-copy">
-                <strong>Oceans HD Theater Sample</strong>
-                <span>Instant high-bitrate test clip with automatic MP4 / WebM fallback.</span>
-              </div>
-              <button type="button" id="btn-load-demo" class="secondary-btn">Load Sample</button>
-            </div>
-          </div>
-        </div>
-
-        <div class="status-stack" aria-live="polite" role="status">
-          <div id="file-info" class="status-banner hidden"></div>
-          <div id="subtitle-info" class="status-banner hidden"></div>
-        </div>
-      </section>
-
-      <!-- Step 2: Essential Theater & Format Pills -->
-      <section class="card-block viewing-presets">
-        <h2 class="visually-hidden">Theater &amp; Format Presets</h2>
-
-        <fieldset class="pill-fieldset">
-          <legend>Video Format</legend>
-          <div class="pill-group">
-            <div class="pill-item">
-              <input type="radio" id="mode-2d" name="mode" value="2d" class="visually-hidden" checked />
-              <label for="mode-2d" class="pill-label"><span class="pill-indicator" aria-hidden="true"></span><span>2D</span></label>
-            </div>
-            <div class="pill-item">
-              <input type="radio" id="mode-hsbs" name="mode" value="3d-hsbs" class="visually-hidden" />
-              <label for="mode-hsbs" class="pill-label"><span class="pill-indicator" aria-hidden="true"></span><span>Half-SBS</span></label>
-            </div>
-            <div class="pill-item">
-              <input type="radio" id="mode-fsbs" name="mode" value="3d-fsbs" class="visually-hidden" />
-              <label for="mode-fsbs" class="pill-label"><span class="pill-indicator" aria-hidden="true"></span><span>Full-SBS</span></label>
-            </div>
-            <div class="pill-item">
-              <input type="radio" id="mode-hou" name="mode" value="3d-hou" class="visually-hidden" />
-              <label for="mode-hou" class="pill-label"><span class="pill-indicator" aria-hidden="true"></span><span>Half-OU</span></label>
-            </div>
-            <div class="pill-item">
-              <input type="radio" id="mode-fou" name="mode" value="3d-fou" class="visually-hidden" />
-              <label for="mode-fou" class="pill-label"><span class="pill-indicator" aria-hidden="true"></span><span>Full-OU</span></label>
+            <div class="env-card-item">
+              <input type="radio" id="env-bed" name="env" value="bed" class="visually-hidden" />
+              <label for="env-bed" class="env-card-label">
+                <svg class="env-icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M3 18h18M5 10l12-4M5 14h10" />
+                </svg>
+                <strong>Bed</strong>
+                <span>Ceiling view</span>
+              </label>
             </div>
           </div>
         </fieldset>
 
-        <div class="dual-preset-row">
-          <fieldset class="pill-fieldset">
-            <legend>Theater</legend>
-            <div class="pill-group">
-              <div class="pill-item">
-                <input type="radio" id="env-cinema" name="env" value="cinema" class="visually-hidden" checked />
-                <label for="env-cinema" class="pill-label"><span class="pill-indicator" aria-hidden="true"></span><span>Cinema</span></label>
-              </div>
-              <div class="pill-item">
-                <input type="radio" id="env-void" name="env" value="void" class="visually-hidden" />
-                <label for="env-void" class="pill-label"><span class="pill-indicator" aria-hidden="true"></span><span>Void</span></label>
-              </div>
-              <div class="pill-item">
-                <input type="radio" id="env-bed" name="env" value="bed" class="visually-hidden" />
-                <label for="env-bed" class="pill-label"><span class="pill-indicator" aria-hidden="true"></span><span>Bed</span></label>
-              </div>
-            </div>
-          </fieldset>
+        <!-- Screen Seat & 3D Video Format -->
+        <section class="feed-section preset-chips-section">
+          <h2 class="visually-hidden">Screen Size and 3D Format</h2>
 
           <fieldset class="pill-fieldset">
-            <legend>Screen Size</legend>
+            <legend class="section-label">Screen Size</legend>
             <div class="pill-group">
               <div class="pill-item">
                 <input type="radio" id="size-imax" name="screenSize" value="imax" class="visually-hidden" />
@@ -262,169 +267,236 @@
               </div>
             </div>
           </fieldset>
-        </div>
-      </section>
 
-      <!-- Step 3: Primary Launch Action (Visible above the fold) -->
-      <div class="action-section">
+          <fieldset class="pill-fieldset">
+            <legend class="section-label">Video Format</legend>
+            <div class="pill-group">
+              <div class="pill-item">
+                <input type="radio" id="mode-2d" name="mode" value="2d" class="visually-hidden" checked />
+                <label for="mode-2d" class="pill-label"><span class="pill-indicator" aria-hidden="true"></span><span>2D</span></label>
+              </div>
+              <div class="pill-item">
+                <input type="radio" id="mode-hsbs" name="mode" value="3d-hsbs" class="visually-hidden" />
+                <label for="mode-hsbs" class="pill-label"><span class="pill-indicator" aria-hidden="true"></span><span>Half-SBS</span></label>
+              </div>
+              <div class="pill-item">
+                <input type="radio" id="mode-fsbs" name="mode" value="3d-fsbs" class="visually-hidden" />
+                <label for="mode-fsbs" class="pill-label"><span class="pill-indicator" aria-hidden="true"></span><span>Full-SBS</span></label>
+              </div>
+              <div class="pill-item">
+                <input type="radio" id="mode-hou" name="mode" value="3d-hou" class="visually-hidden" />
+                <label for="mode-hou" class="pill-label"><span class="pill-indicator" aria-hidden="true"></span><span>Half-OU</span></label>
+              </div>
+              <div class="pill-item">
+                <input type="radio" id="mode-fou" name="mode" value="3d-fou" class="visually-hidden" />
+                <label for="mode-fou" class="pill-label"><span class="pill-indicator" aria-hidden="true"></span><span>Full-OU</span></label>
+              </div>
+            </div>
+          </fieldset>
+        </section>
+      </main>
+
+      <!-- Fixed Thumb-Reach Bottom Launch Bar -->
+      <footer class="bottom-cta-bar">
+        <button type="button" id="btn-optics-pill" class="optics-summary-btn" aria-haspopup="dialog">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <line x1="4" y1="21" x2="4" y2="14" />
+            <line x1="4" y1="10" x2="4" y2="3" />
+            <line x1="12" y1="21" x2="12" y2="12" />
+            <line x1="12" y1="8" x2="12" y2="3" />
+            <line x1="20" y1="21" x2="20" y2="16" />
+            <line x1="20" y1="12" x2="20" y2="3" />
+            <line x1="2" y1="14" x2="6" y2="14" />
+            <line x1="10" y1="8" x2="14" y2="8" />
+            <line x1="18" y1="16" x2="22" y2="16" />
+          </svg>
+          <span id="optics-summary-meta">62 mm · 75° · Optics On</span>
+        </button>
+
         <button type="button" id="btn-enter-vr" class="primary-btn">
           <svg class="icon-svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="M3 9a3 3 0 0 1 3-3h12a3 3 0 0 1 3 3v6a3 3 0 0 1-3 3h-2.8a2 2 0 0 1-1.79-1.11l-.52-1.04a1 1 0 0 0-1.78 0l-.52 1.04A2 2 0 0 1 8.8 18H6a3 3 0 0 1-3-3V9Z" />
             <circle cx="8" cy="12" r="2" />
             <circle cx="16" cy="12" r="2" />
           </svg>
-          <span>Enter VR Theater</span>
+          <span>Enter VR &amp; Place in Headset</span>
           <svg class="cta-arrow" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="M5 12h14" />
             <path d="m12 5 7 7-7 7" />
           </svg>
         </button>
-      </div>
+      </footer>
+    </div>
+  </div>
 
-      <!-- Step 4: Collapsible Drawers -->
-      <div class="drawers-stack">
-        <details id="optics-drawer" class="drawer-card">
-          <summary class="drawer-summary">
-            <span class="drawer-title">Headset &amp; Optics</span>
-            <span class="drawer-meta" id="optics-summary-meta">62 mm · 75° · Optics On</span>
-          </summary>
-          <div class="drawer-body">
-            <div class="optics-grid">
-              <fieldset class="pill-fieldset">
-                <legend>Lens Separation (IPD)</legend>
-                <div class="pill-group pill-group-compact">
-                  <div class="pill-item">
-                    <input type="radio" id="ipd-58" name="ipd" value="0.058" class="visually-hidden" />
-                    <label for="ipd-58" class="pill-label"><span>58 mm</span></label>
-                  </div>
-                  <div class="pill-item">
-                    <input type="radio" id="ipd-62" name="ipd" value="0.062" class="visually-hidden" checked />
-                    <label for="ipd-62" class="pill-label"><span>62 mm</span></label>
-                  </div>
-                  <div class="pill-item">
-                    <input type="radio" id="ipd-64" name="ipd" value="0.064" class="visually-hidden" />
-                    <label for="ipd-64" class="pill-label"><span>64 mm</span></label>
-                  </div>
-                  <div class="pill-item">
-                    <input type="radio" id="ipd-68" name="ipd" value="0.068" class="visually-hidden" />
-                    <label for="ipd-68" class="pill-label"><span>68 mm</span></label>
-                  </div>
-                  <div class="pill-item">
-                    <input type="radio" id="ipd-72" name="ipd" value="0.072" class="visually-hidden" />
-                    <label for="ipd-72" class="pill-label"><span>72 mm</span></label>
-                  </div>
-                </div>
-              </fieldset>
+  <!-- Modal Bottom Sheet 1: Headset & Optics Calibration -->
+  <dialog id="optics-dialog" class="sheet-dialog" closedby="any" aria-labelledby="optics-dialog-title">
+    <div class="sheet-handle" aria-hidden="true"></div>
+    <div class="sheet-header">
+      <h1 id="optics-dialog-title">Headset &amp; Optics</h1>
+      <form method="dialog">
+        <button type="submit" class="icon-circle-btn" aria-label="Close headset and optics settings">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true">
+            <path d="M18 6 6 18M6 6l12 12" />
+          </svg>
+        </button>
+      </form>
+    </div>
 
-              <fieldset class="pill-fieldset">
-                <legend>Field of View</legend>
-                <div class="pill-group pill-group-compact">
-                  <div class="pill-item">
-                    <input type="radio" id="fov-70" name="fov" value="70" class="visually-hidden" />
-                    <label for="fov-70" class="pill-label"><span>70°</span></label>
-                  </div>
-                  <div class="pill-item">
-                    <input type="radio" id="fov-75" name="fov" value="75" class="visually-hidden" checked />
-                    <label for="fov-75" class="pill-label"><span>75°</span></label>
-                  </div>
-                  <div class="pill-item">
-                    <input type="radio" id="fov-80" name="fov" value="80" class="visually-hidden" />
-                    <label for="fov-80" class="pill-label"><span>80°</span></label>
-                  </div>
-                  <div class="pill-item">
-                    <input type="radio" id="fov-85" name="fov" value="85" class="visually-hidden" />
-                    <label for="fov-85" class="pill-label"><span>85°</span></label>
-                  </div>
-                </div>
-              </fieldset>
-
-              <fieldset class="pill-fieldset">
-                <legend>Comfort Dimmer</legend>
-                <div class="pill-group pill-group-compact">
-                  <div class="pill-item">
-                    <input type="radio" id="bright-1" name="brightness" value="1" class="visually-hidden" checked />
-                    <label for="bright-1" class="pill-label"><span>100%</span></label>
-                  </div>
-                  <div class="pill-item">
-                    <input type="radio" id="bright-08" name="brightness" value="0.8" class="visually-hidden" />
-                    <label for="bright-08" class="pill-label"><span>80%</span></label>
-                  </div>
-                  <div class="pill-item">
-                    <input type="radio" id="bright-06" name="brightness" value="0.6" class="visually-hidden" />
-                    <label for="bright-06" class="pill-label"><span>60% Saver</span></label>
-                  </div>
-                </div>
-              </fieldset>
-
-              <div class="switch-stack">
-                <label class="switch-row" for="distortion-toggle">
-                  <span class="switch-copy">
-                    <span class="switch-title">JioDive Lens Correction</span>
-                    <span class="switch-sub">Calibrated optical barrel profile (k1=0.101, k2=0.098)</span>
-                  </span>
-                  <input type="checkbox" id="distortion-toggle" switch role="switch" class="switch-input" checked />
-                </label>
-
-                <label class="switch-row" for="swap-eyes-toggle">
-                  <span class="switch-copy">
-                    <span class="switch-title">Swap 3D Eye Order</span>
-                    <span class="switch-sub">Flip Left/Right or Top/Bottom halves for inverted 3D files</span>
-                  </span>
-                  <input type="checkbox" id="swap-eyes-toggle" switch role="switch" class="switch-input" />
-                </label>
-
-                <label class="switch-row" for="dwell-toggle">
-                  <span class="switch-copy">
-                    <span class="switch-title">Hands-Free Gaze Dwell</span>
-                    <span class="switch-sub">Look at any VR button for 1.2s to click automatically</span>
-                  </span>
-                  <input type="checkbox" id="dwell-toggle" switch role="switch" class="switch-input" />
-                </label>
-              </div>
-            </div>
+    <div class="sheet-body">
+      <fieldset class="pill-fieldset">
+        <legend class="section-label">Lens Separation (IPD)</legend>
+        <div class="pill-group pill-group-compact">
+          <div class="pill-item">
+            <input type="radio" id="ipd-58" name="ipd" value="0.058" class="visually-hidden" />
+            <label for="ipd-58" class="pill-label"><span>58 mm</span></label>
           </div>
-        </details>
-
-        <details id="tips-drawer" class="drawer-card">
-          <summary class="drawer-summary">
-            <span class="drawer-title">Controls &amp; JioDive Tips</span>
-            <span class="drawer-meta">Click · Dwell · Gamepad</span>
-          </summary>
-          <div class="drawer-body">
-            <ul class="tips-list">
-              <li>
-                <svg class="tip-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                  <circle cx="12" cy="12" r="9" />
-                  <circle cx="12" cy="12" r="2" />
-                </svg>
-                <span><strong>Conductive Trigger &amp; Dwell:</strong> Tap the JioDive button while aiming to click, or tap empty space to hide/show the remote. Enable <strong>Gaze Dwell</strong> for hands-free control.</span>
-              </li>
-              <li>
-                <svg class="tip-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                  <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
-                  <path d="M3 3v5h5" />
-                </svg>
-                <span><strong>Instant Recenter:</strong> Double-tap the headset trigger cleanly anytime to snap the theater straight ahead (or press <strong>R</strong> / Gamepad <strong>X/Y</strong>).</span>
-              </li>
-              <li>
-                <svg class="tip-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                  <rect x="2" y="6" width="20" height="12" rx="4" />
-                  <path d="M6 12h4M8 10v4M15 11h.01M18 13h.01" />
-                </svg>
-                <span><strong>Gamepad &amp; Keyboard:</strong> Supports Bluetooth controllers (<code>A</code> click, <code>B</code> menu, D-Pad seek) and <code>Space</code>, <code>Arrows</code>, <code>M</code>, <code>H</code>, <code>Esc</code>.</span>
-              </li>
-              <li>
-                <svg class="tip-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                  <rect x="5" y="2" width="14" height="20" rx="2" />
-                  <path d="M12 18h.01" />
-                </svg>
-                <span><strong>iOS Safari Fullscreen:</strong> Tap <em>Share &rarr; Add to Home Screen</em> and launch from your Home Screen icon to hide browser toolbars.</span>
-              </li>
-            </ul>
+          <div class="pill-item">
+            <input type="radio" id="ipd-62" name="ipd" value="0.062" class="visually-hidden" checked />
+            <label for="ipd-62" class="pill-label"><span>62 mm</span></label>
           </div>
-        </details>
+          <div class="pill-item">
+            <input type="radio" id="ipd-64" name="ipd" value="0.064" class="visually-hidden" />
+            <label for="ipd-64" class="pill-label"><span>64 mm</span></label>
+          </div>
+          <div class="pill-item">
+            <input type="radio" id="ipd-68" name="ipd" value="0.068" class="visually-hidden" />
+            <label for="ipd-68" class="pill-label"><span>68 mm</span></label>
+          </div>
+          <div class="pill-item">
+            <input type="radio" id="ipd-72" name="ipd" value="0.072" class="visually-hidden" />
+            <label for="ipd-72" class="pill-label"><span>72 mm</span></label>
+          </div>
+        </div>
+      </fieldset>
+
+      <fieldset class="pill-fieldset">
+        <legend class="section-label">Field of View</legend>
+        <div class="pill-group pill-group-compact">
+          <div class="pill-item">
+            <input type="radio" id="fov-70" name="fov" value="70" class="visually-hidden" />
+            <label for="fov-70" class="pill-label"><span>70°</span></label>
+          </div>
+          <div class="pill-item">
+            <input type="radio" id="fov-75" name="fov" value="75" class="visually-hidden" checked />
+            <label for="fov-75" class="pill-label"><span>75°</span></label>
+          </div>
+          <div class="pill-item">
+            <input type="radio" id="fov-80" name="fov" value="80" class="visually-hidden" />
+            <label for="fov-80" class="pill-label"><span>80°</span></label>
+          </div>
+          <div class="pill-item">
+            <input type="radio" id="fov-85" name="fov" value="85" class="visually-hidden" />
+            <label for="fov-85" class="pill-label"><span>85°</span></label>
+          </div>
+        </div>
+      </fieldset>
+
+      <fieldset class="pill-fieldset">
+        <legend class="section-label">Comfort Dimmer</legend>
+        <div class="pill-group pill-group-compact">
+          <div class="pill-item">
+            <input type="radio" id="bright-1" name="brightness" value="1" class="visually-hidden" checked />
+            <label for="bright-1" class="pill-label"><span>100%</span></label>
+          </div>
+          <div class="pill-item">
+            <input type="radio" id="bright-08" name="brightness" value="0.8" class="visually-hidden" />
+            <label for="bright-08" class="pill-label"><span>80%</span></label>
+          </div>
+          <div class="pill-item">
+            <input type="radio" id="bright-06" name="brightness" value="0.6" class="visually-hidden" />
+            <label for="bright-06" class="pill-label"><span>60% Saver</span></label>
+          </div>
+        </div>
+      </fieldset>
+
+      <div class="switch-stack">
+        <label class="switch-row" for="distortion-toggle">
+          <span class="switch-copy">
+            <span class="switch-title">JioDive Lens Correction</span>
+            <span class="switch-sub">Optical barrel &amp; CAS sharpening profile</span>
+          </span>
+          <input type="checkbox" id="distortion-toggle" switch role="switch" class="switch-input" checked />
+        </label>
+
+        <label class="switch-row" for="swap-eyes-toggle">
+          <span class="switch-copy">
+            <span class="switch-title">Swap 3D Eye Order</span>
+            <span class="switch-sub">Flip Left/Right halves for inverted 3D files</span>
+          </span>
+          <input type="checkbox" id="swap-eyes-toggle" switch role="switch" class="switch-input" />
+        </label>
+
+        <label class="switch-row" for="dwell-toggle">
+          <span class="switch-copy">
+            <span class="switch-title">Hands-Free Gaze Dwell</span>
+            <span class="switch-sub">Look at a button for 1.2s to click automatically</span>
+          </span>
+          <input type="checkbox" id="dwell-toggle" switch role="switch" class="switch-input" />
+        </label>
       </div>
-    </main>
+    </div>
+  </dialog>
+
+  <!-- Modal Bottom Sheet 2: Controls & JioDive Setup Tips -->
+  <dialog id="tips-dialog" class="sheet-dialog" closedby="any" aria-labelledby="tips-dialog-title">
+    <div class="sheet-handle" aria-hidden="true"></div>
+    <div class="sheet-header">
+      <h1 id="tips-dialog-title">Controls &amp; JioDive Tips</h1>
+      <form method="dialog">
+        <button type="submit" class="icon-circle-btn" aria-label="Close controls guide">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true">
+            <path d="M18 6 6 18M6 6l12 12" />
+          </svg>
+        </button>
+      </form>
+    </div>
+
+    <div class="sheet-body">
+      <ul class="tips-list">
+        <li>
+          <svg class="tip-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="9" />
+            <circle cx="12" cy="12" r="2" />
+          </svg>
+          <span><strong>JioDive Trigger &amp; Dwell:</strong> Tap the headset conductive button while aiming to click, or tap empty space to hide/show the remote. Enable <strong>Gaze Dwell</strong> in Optics for hands-free control.</span>
+        </li>
+        <li>
+          <svg class="tip-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+            <path d="M3 3v5h5" />
+          </svg>
+          <span><strong>Instant Recenter:</strong> Double-tap cleanly anytime to snap the screen straight ahead (or press <strong>R</strong> / Gamepad <strong>X/Y</strong>).</span>
+        </li>
+        <li>
+          <svg class="tip-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <rect x="2" y="6" width="20" height="12" rx="4" />
+            <path d="M6 12h4M8 10v4M15 11h.01M18 13h.01" />
+          </svg>
+          <span><strong>Controllers &amp; Keyboard:</strong> Works with Bluetooth gamepads (<code>A</code> click, <code>B</code> menu, D-Pad seek) and keys <code>Space</code>, <code>Arrows</code>, <code>M</code>, <code>H</code>, <code>Esc</code>.</span>
+        </li>
+        <li>
+          <svg class="tip-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <rect x="5" y="2" width="14" height="20" rx="2" />
+            <path d="M12 18h.01" />
+          </svg>
+          <span><strong>Android &amp; iOS PWA:</strong> Opens upright in portrait like a native app and automatically locks to landscape when entering VR.</span>
+        </li>
+      </ul>
+    </div>
+  </dialog>
+
+  <!-- Helpful non-blocking Rotate Prompt if user is still holding phone vertically inside VR -->
+  <div id="rotate-hint" class="rotate-hint hidden" role="status" aria-live="polite">
+    <div class="rotate-hint-card">
+      <svg class="rotate-icon" width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <rect x="7" y="2" width="10" height="20" rx="2" />
+        <path d="M12 18h.01" />
+      </svg>
+      <strong>Rotate phone sideways</strong>
+      <p>Place your phone horizontally inside the JioDive tray to view in full stereo VR.</p>
+      <button type="button" id="btn-dismiss-rotate" class="secondary-btn">Continue</button>
+    </div>
   </div>
 
   <!-- The 3D Canvas -->

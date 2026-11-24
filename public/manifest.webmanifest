@@ -4,7 +4,6 @@
   "description": "Virtual Cinema & IMAX-style 3D theater player for JioDive headsets",
   "start_url": "./",
   "display": "standalone",
-  "orientation": "landscape",
   "background_color": "#070812",
   "theme_color": "#070812",
   "icons": [

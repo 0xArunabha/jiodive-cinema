@@ -1025,8 +1025,9 @@ export class GazeUI {
   }
 
   initClickListeners() {
-    const handleTrigger = () => {
+    const handleTrigger = (e) => {
       if (!this.rig.isVrActive) return;
+      if (e?.target?.closest?.('#rotate-hint, dialog, #launcher')) return;
 
       const now = performance.now();
       // Double click detection (<350ms) -> Instant Recenter!
@@ -1248,6 +1249,17 @@ export class GazeUI {
     }
     if (document.fullscreenElement) {
       document.exitFullscreen().catch(() => {});
+    }
+    if (window.screen?.orientation?.unlock) {
+      try {
+        window.screen.orientation.unlock();
+      } catch {
+        // Ignore on browsers where orientation unlock is unsupported
+      }
+    }
+    const rotateHint = document.getElementById('rotate-hint');
+    if (rotateHint) {
+      rotateHint.classList.add('hidden');
     }
     const launcher = document.getElementById('launcher');
     if (launcher) {
