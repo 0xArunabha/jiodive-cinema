@@ -4,6 +4,7 @@ import { CinemaScreen } from './vr/screenMesh.js';
 import { AmbientLighting } from './vr/ambientLighting.js';
 import { Environments } from './vr/environments.js';
 import { GazeUI } from './vr/gazeUI.js';
+import { parseSubtitles } from './vr/subtitleParser.js';
 
 // Elements
 const canvas = document.getElementById('vr-canvas');
@@ -15,6 +16,9 @@ const btnLoadDemo = document.getElementById('btn-load-demo');
 const streamUrlInput = document.getElementById('stream-url-input');
 const btnLoadUrl = document.getElementById('btn-load-url');
 const fileInfo = document.getElementById('file-info');
+const subtitleFileInput = document.getElementById('subtitle-file-input');
+const btnClearSubtitles = document.getElementById('btn-clear-subtitles');
+const subtitleInfo = document.getElementById('subtitle-info');
 const modeSelect = document.getElementById('mode-select');
 const envSelect = document.getElementById('env-select');
 const ipdSelect = document.getElementById('ipd-select');
@@ -139,6 +143,88 @@ if (btnLoadUrl && streamUrlInput) {
     fileInfo.classList.remove('hidden');
   });
 }
+
+// Subtitle File Loader (.srt / .vtt)
+if (subtitleFileInput && subtitleInfo) {
+  subtitleFileInput.addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    try {
+      const text = await file.text();
+      const cues = parseSubtitles(text);
+      if (cues.length === 0) {
+        cinemaScreen.setSubtitles([]);
+        subtitleInfo.className = 'file-info error';
+        subtitleInfo.textContent = `⚠️ No valid cues found in "${file.name}". Ensure it is a valid .srt or .vtt file.`;
+        subtitleInfo.classList.remove('hidden');
+        if (btnClearSubtitles) btnClearSubtitles.classList.add('hidden');
+        return;
+      }
+
+      cinemaScreen.setSubtitles(cues);
+      subtitleInfo.className = 'file-info';
+      subtitleInfo.textContent = `Loaded Subtitles: ${file.name} (${cues.length} lines)`;
+      subtitleInfo.classList.remove('hidden');
+      if (btnClearSubtitles) btnClearSubtitles.classList.remove('hidden');
+    } catch (err) {
+      subtitleInfo.className = 'file-info error';
+      subtitleInfo.textContent = `⚠️ Could not read subtitle file: ${err.message}`;
+      subtitleInfo.classList.remove('hidden');
+    }
+  });
+}
+
+if (btnClearSubtitles) {
+  btnClearSubtitles.addEventListener('click', () => {
+    cinemaScreen.setSubtitles([]);
+    if (subtitleFileInput) subtitleFileInput.value = '';
+    if (subtitleInfo) {
+      subtitleInfo.textContent = '';
+      subtitleInfo.classList.add('hidden');
+    }
+    btnClearSubtitles.classList.add('hidden');
+  });
+}
+
+// Persistent Headset Optical Preferences (IPD & FOV)
+const PREFS_KEY = 'jiodive_prefs';
+
+function loadSavedPreferences() {
+  try {
+    const raw = localStorage.getItem(PREFS_KEY);
+    if (!raw) return;
+    const prefs = JSON.parse(raw);
+    if (ipdSelect && prefs.ipd && Array.from(ipdSelect.options).some((o) => o.value === String(prefs.ipd))) {
+      ipdSelect.value = String(prefs.ipd);
+      rig.setIPD(parseFloat(ipdSelect.value));
+    }
+    if (fovSelect && prefs.fov && Array.from(fovSelect.options).some((o) => o.value === String(prefs.fov))) {
+      fovSelect.value = String(prefs.fov);
+      rig.setFOV(parseFloat(fovSelect.value));
+    }
+  } catch {
+    // Ignore storage access errors in restricted modes
+  }
+}
+
+function savePreferences() {
+  try {
+    localStorage.setItem(
+      PREFS_KEY,
+      JSON.stringify({
+        ipd: ipdSelect ? ipdSelect.value : '0.064',
+        fov: fovSelect ? fovSelect.value : '75'
+      })
+    );
+  } catch {
+    // Ignore storage errors
+  }
+}
+
+loadSavedPreferences();
+if (ipdSelect) ipdSelect.addEventListener('change', savePreferences);
+if (fovSelect) fovSelect.addEventListener('change', savePreferences);
 
 // Screen Wake Lock
 async function requestWakeLock() {

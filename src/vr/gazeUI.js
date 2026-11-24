@@ -16,8 +16,16 @@ export class GazeUI {
 
     this.interactiveObjects = [];
     this.hoveredObject = null;
+    this.hoverSeekRatio = null;
     this.raycaster = new THREE.Raycaster();
+    this.raycaster.layers.enable(1); // Match cinema screen meshL (layer 1) in addition to layer 0 UI
+    this._rayOrigin = new THREE.Vector3();
+    this._rayDir = new THREE.Vector3();
     this.isMenuVisible = true;
+
+    this.lastSeekRenderKey = '';
+    this.lastTimeRenderKey = '';
+    this.ccHintUntil = 0;
 
     // Physical button double-click detection & single-click debounce timer
     this.lastClickTime = 0;
@@ -51,30 +59,33 @@ export class GazeUI {
 
   createControlPanel() {
     this.menuGroup = new THREE.Group();
-    // Position floating panel comfortably in lower gaze view, scaled to stay clear of armrests & fit all aspect ratios
-    this.menuGroup.position.set(0, 0.42, -4.5);
+    // Position floating panel comfortably in lower gaze view, scaled to clear armrests & fit all aspect ratios
+    this.menuGroup.position.set(0, 0.36, -4.5);
     this.menuGroup.rotation.x = -0.2;
-    this.menuGroup.scale.set(0.76, 0.76, 0.76);
+    this.menuGroup.scale.set(0.75, 0.75, 0.75);
     this.rig.scene.add(this.menuGroup);
 
-    // Background Plate
-    const bgGeom = new THREE.PlaneGeometry(3.8, 0.76);
+    // Background Plate (accommodates top seek bar row + 2 button rows)
+    const bgGeom = new THREE.PlaneGeometry(3.8, 1.02);
     const bgMat = new THREE.MeshBasicMaterial({
       color: 0x0c0e17,
       transparent: true,
-      opacity: 0.8,
+      opacity: 0.82,
       side: THREE.DoubleSide
     });
     const bg = new THREE.Mesh(bgGeom, bgMat);
     this.menuGroup.add(bg);
 
-    // Row 1 Buttons
+    // Top Row (y = 0.33): Interactive Seek Bar + Time Readout + CC Toggle
+    this.createSeekBarRow();
+
+    // Row 1 Buttons (y = 0.04)
     const row1 = [
-      { id: 'rw', label: '⏪ -10s', x: -1.4, y: 0.12, action: () => this.seek(-10) },
-      { id: 'play', label: '▶ Play', x: -0.7, y: 0.12, action: () => this.togglePlay() },
-      { id: 'ff', label: '⏩ +10s', x: 0.0, y: 0.12, action: () => this.seek(10) },
-      { id: 'env', label: '🏛 Room', x: 0.7, y: 0.12, action: () => this.cycleEnvironment() },
-      { id: 'recenter', label: '🎯 Recenter', x: 1.4, y: 0.12, action: () => this.rig.recenter() }
+      { id: 'rw', label: '⏪ -10s', x: -1.4, y: 0.04, action: () => this.seek(-10) },
+      { id: 'play', label: '▶ Play', x: -0.7, y: 0.04, action: () => this.togglePlay() },
+      { id: 'ff', label: '⏩ +10s', x: 0.0, y: 0.04, action: () => this.seek(10) },
+      { id: 'env', label: '🏛 Room', x: 0.7, y: 0.04, action: () => this.cycleEnvironment() },
+      { id: 'recenter', label: '🎯 Recenter', x: 1.4, y: 0.04, action: () => this.rig.recenter() }
     ];
 
     row1.forEach((b) => {
@@ -86,67 +97,99 @@ export class GazeUI {
       }
     });
 
-    // Row 2 Buttons
-    const audioBtn = this.createButtonMesh('🔊 Sound', -1.4, -0.16, () => this.toggleAudio());
+    // Row 2 Buttons (y = -0.26)
+    const audioBtn = this.createButtonMesh('🔊 Sound', -1.4, -0.26, () => this.toggleAudio());
     this.menuGroup.add(audioBtn);
     this.interactiveObjects.push(audioBtn);
     this.audioBtnMesh = audioBtn;
 
-    const formatBtn = this.createButtonMesh('🕶 2D', -0.7, -0.16, () => this.cycleFormat());
+    const formatBtn = this.createButtonMesh('🕶 2D', -0.7, -0.26, () => this.cycleFormat());
     this.menuGroup.add(formatBtn);
     this.interactiveObjects.push(formatBtn);
     this.formatBtnMesh = formatBtn;
 
     const ipdMm = Math.round(this.rig.ipd * 1000);
-    const ipdBtn = this.createButtonMesh(`👁 ${ipdMm}mm`, 0.0, -0.16, () => this.cycleIPD());
+    const ipdBtn = this.createButtonMesh(`👁 ${ipdMm}mm`, 0.0, -0.26, () => this.cycleIPD());
     this.menuGroup.add(ipdBtn);
     this.interactiveObjects.push(ipdBtn);
     this.ipdBtnMesh = ipdBtn;
 
-    const bedBtn = this.createButtonMesh('🛏 Bed Mode', 0.7, -0.16, () => this.toggleBedMode());
+    const bedBtn = this.createButtonMesh('🛏 Bed Mode', 0.7, -0.26, () => this.toggleBedMode());
     this.menuGroup.add(bedBtn);
     this.interactiveObjects.push(bedBtn);
 
-    const exitBtn = this.createButtonMesh('🚪 Exit VR', 1.4, -0.16, () => this.exitVR());
+    const exitBtn = this.createButtonMesh('🚪 Exit VR', 1.4, -0.26, () => this.exitVR());
     this.menuGroup.add(exitBtn);
     this.interactiveObjects.push(exitBtn);
   }
 
-  createButtonMesh(text, x, y, onClick) {
+  createSeekBarRow() {
+    // 1. Seek Track (interactive UV horizontal scrub)
+    const seekCanvas = document.createElement('canvas');
+    seekCanvas.width = 512;
+    seekCanvas.height = 48;
+    const seekTex = new THREE.CanvasTexture(seekCanvas);
+    seekTex.colorSpace = THREE.SRGBColorSpace;
+    const seekGeom = new THREE.PlaneGeometry(2.26, 0.14);
+    const seekMat = new THREE.MeshBasicMaterial({ map: seekTex, transparent: true, side: THREE.DoubleSide });
+    this.seekBarMesh = new THREE.Mesh(seekGeom, seekMat);
+    this.seekBarMesh.position.set(-0.62, 0.33, 0.02);
+    this.seekBarMesh.userData = {
+      isSeekBar: true,
+      noHoverScale: true,
+      canvas: seekCanvas,
+      ctx: seekCanvas.getContext('2d')
+    };
+    this.menuGroup.add(this.seekBarMesh);
+    this.interactiveObjects.push(this.seekBarMesh);
+
+    // 2. Time Display Readout
+    const timeCanvas = document.createElement('canvas');
+    timeCanvas.width = 256;
+    timeCanvas.height = 48;
+    const timeTex = new THREE.CanvasTexture(timeCanvas);
+    timeTex.colorSpace = THREE.SRGBColorSpace;
+    const timeGeom = new THREE.PlaneGeometry(0.72, 0.14);
+    const timeMat = new THREE.MeshBasicMaterial({ map: timeTex, transparent: true, side: THREE.DoubleSide });
+    this.timeMesh = new THREE.Mesh(timeGeom, timeMat);
+    this.timeMesh.position.set(0.92, 0.33, 0.02);
+    this.timeMesh.userData = {
+      canvas: timeCanvas,
+      ctx: timeCanvas.getContext('2d')
+    };
+    this.menuGroup.add(this.timeMesh);
+
+    // 3. Subtitle Toggle Button
+    const ccBtn = this.createButtonMesh('💬 CC', 1.54, 0.33, () => this.toggleSubtitles(), {
+      width: 0.42,
+      height: 0.14,
+      canvasW: 160,
+      canvasH: 56,
+      fontSize: 22
+    });
+    this.menuGroup.add(ccBtn);
+    this.interactiveObjects.push(ccBtn);
+    this.ccBtnMesh = ccBtn;
+
+    this.drawSeekBar(0, null);
+    this.drawTimeReadout(0, 0, null);
+  }
+
+  createButtonMesh(text, x, y, onClick, opts = {}) {
+    const width = opts.width ?? 0.62;
+    const height = opts.height ?? 0.2;
+    const canvasW = opts.canvasW ?? 256;
+    const canvasH = opts.canvasH ?? 80;
+    const fontSize = opts.fontSize ?? 26;
+
     const canvas = document.createElement('canvas');
-    canvas.width = 256;
-    canvas.height = 80;
+    canvas.width = canvasW;
+    canvas.height = canvasH;
     const ctx = canvas.getContext('2d');
-
-    // Draw button background
-    ctx.fillStyle = '#1e2235';
-    if (ctx.roundRect) {
-      ctx.roundRect(4, 4, 248, 72, 16);
-    } else {
-      ctx.rect(4, 4, 248, 72);
-    }
-    ctx.fill();
-
-    // Border
-    ctx.strokeStyle = '#4f46e5';
-    ctx.lineWidth = 4;
-    if (ctx.roundRect) {
-      ctx.roundRect(4, 4, 248, 72, 16);
-    } else {
-      ctx.rect(4, 4, 248, 72);
-    }
-    ctx.stroke();
-
-    // Text
-    ctx.fillStyle = '#ffffff';
-    ctx.font = 'bold 26px -apple-system, sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(text, 128, 40);
 
     const texture = new THREE.CanvasTexture(canvas);
     texture.colorSpace = THREE.SRGBColorSpace;
-    const geom = new THREE.PlaneGeometry(0.62, 0.2);
+    const geom = new THREE.PlaneGeometry(width, height);
     const mat = new THREE.MeshBasicMaterial({
       map: texture,
       transparent: true,
@@ -156,45 +199,50 @@ export class GazeUI {
     const mesh = new THREE.Mesh(geom, mat);
     mesh.position.set(x, y, 0.02);
     mesh.userData = {
-      onClick: onClick,
+      onClick,
       originalScale: new THREE.Vector3(1, 1, 1),
-      canvas: canvas,
-      ctx: ctx,
-      currentText: text
+      canvas,
+      ctx,
+      canvasW,
+      canvasH,
+      fontSize,
+      currentText: ''
     };
 
+    this.updateButtonText(mesh, text);
     return mesh;
   }
 
   updateButtonText(mesh, text) {
     if (!mesh || !mesh.userData) return;
-    const ctx = mesh.userData.ctx;
-    const canvas = mesh.userData.canvas;
+    const { ctx, canvasW = 256, canvasH = 80, fontSize = 26 } = mesh.userData;
 
-    ctx.clearRect(0, 0, 256, 80);
+    ctx.clearRect(0, 0, canvasW, canvasH);
 
     ctx.fillStyle = '#1e2235';
     if (ctx.roundRect) {
-      ctx.roundRect(4, 4, 248, 72, 16);
+      ctx.beginPath();
+      ctx.roundRect(4, 4, canvasW - 8, canvasH - 8, 16);
+      ctx.fill();
     } else {
-      ctx.rect(4, 4, 248, 72);
+      ctx.fillRect(4, 4, canvasW - 8, canvasH - 8);
     }
-    ctx.fill();
 
     ctx.strokeStyle = '#4f46e5';
     ctx.lineWidth = 4;
     if (ctx.roundRect) {
-      ctx.roundRect(4, 4, 248, 72, 16);
+      ctx.beginPath();
+      ctx.roundRect(4, 4, canvasW - 8, canvasH - 8, 16);
+      ctx.stroke();
     } else {
-      ctx.rect(4, 4, 248, 72);
+      ctx.strokeRect(4, 4, canvasW - 8, canvasH - 8);
     }
-    ctx.stroke();
 
     ctx.fillStyle = '#ffffff';
-    ctx.font = 'bold 26px -apple-system, sans-serif';
+    ctx.font = `bold ${fontSize}px -apple-system, sans-serif`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText(text, 128, 40);
+    ctx.fillText(text, canvasW / 2, canvasH / 2);
 
     mesh.userData.currentText = text;
     if (mesh.material.map) {
@@ -221,15 +269,18 @@ export class GazeUI {
       }
       this.lastClickTime = now;
 
-      // Capture target object at time of tap
+      // Capture target object & seek ratio at time of tap
       const targetObj = this.hoveredObject;
+      const targetSeekRatio = this.hoverSeekRatio;
 
       // Bug 4: Debounce single click action (~280ms) so double-click cancels cleanly
       this.clickTimeout = setTimeout(() => {
         this.clickTimeout = null;
         if (!this.rig.isVrActive) return;
 
-        if (targetObj && targetObj.userData && targetObj.userData.onClick) {
+        if (targetObj === this.seekBarMesh && targetSeekRatio !== null) {
+          this.seekToRatio(targetSeekRatio);
+        } else if (targetObj && targetObj.userData && targetObj.userData.onClick) {
           targetObj.userData.onClick();
           this.pulseButton(targetObj);
         } else {
@@ -252,6 +303,14 @@ export class GazeUI {
     setTimeout(() => {
       mesh.scale.set(1, 1, 1);
     }, 150);
+  }
+
+  syncSelect(id, value) {
+    const el = document.getElementById(id);
+    if (el && el.value !== value) {
+      el.value = value;
+      el.dispatchEvent(new Event('change'));
+    }
   }
 
   toggleMenu() {
@@ -278,21 +337,39 @@ export class GazeUI {
     this.video.currentTime = Math.max(0, Math.min(this.video.duration, this.video.currentTime + seconds));
   }
 
+  seekToRatio(ratio) {
+    if (!this.video || !Number.isFinite(this.video.duration) || this.video.duration <= 0) return;
+    const clamped = THREE.MathUtils.clamp(ratio, 0, 1);
+    this.video.currentTime = clamped * this.video.duration;
+  }
+
+  toggleSubtitles() {
+    if (!this.screen) return;
+    if (!this.screen.subtitleCues || this.screen.subtitleCues.length === 0) {
+      this.ccHintUntil = performance.now() + 1800;
+      return;
+    }
+    this.screen.toggleSubtitles();
+  }
+
   cycleEnvironment() {
     const envs = ['cinema', 'void'];
     const next = envs[(envs.indexOf(this.environments.currentEnv) + 1) % envs.length];
     this.environments.setEnvironment(next, this.screen, this);
+    this.syncSelect('env-select', next);
   }
 
   toggleBedMode() {
     const target = this.environments.currentEnv === 'bed' ? 'cinema' : 'bed';
     this.environments.setEnvironment(target, this.screen, this);
+    this.syncSelect('env-select', target);
   }
 
   cycleFormat() {
     const formats = ['2d', '3d-hsbs', '3d-fsbs', '3d-hou', '3d-fou'];
     const next = formats[(formats.indexOf(this.screen.format) + 1) % formats.length];
     this.screen.setFormat(next);
+    this.syncSelect('mode-select', next);
   }
 
   cycleIPD() {
@@ -305,10 +382,7 @@ export class GazeUI {
     if (this.ipdBtnMesh) {
       this.updateButtonText(this.ipdBtnMesh, `👁 ${mm}mm`);
     }
-    const ipdSelect = document.getElementById('ipd-select');
-    if (ipdSelect) {
-      ipdSelect.value = newIPD.toString();
-    }
+    this.syncSelect('ipd-select', newIPD.toString());
   }
 
   exitVR() {
@@ -325,13 +399,131 @@ export class GazeUI {
     }
   }
 
+  formatTime(seconds) {
+    if (!Number.isFinite(seconds) || seconds < 0) return '0:00';
+    const totalSec = Math.floor(seconds);
+    const h = Math.floor(totalSec / 3600);
+    const m = Math.floor((totalSec % 3600) / 60);
+    const s = totalSec % 60;
+    const mm = h > 0 ? String(m).padStart(2, '0') : String(m);
+    const ss = String(s).padStart(2, '0');
+    return h > 0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
+  }
+
+  drawSeekBar(progressRatio, hoverRatio) {
+    if (!this.seekBarMesh || !this.seekBarMesh.userData) return;
+    const { canvas, ctx } = this.seekBarMesh.userData;
+    const w = canvas.width;
+    const h = canvas.height;
+    const padX = 14;
+    const trackW = w - padX * 2;
+    const trackH = 12;
+    const trackY = (h - trackH) / 2;
+
+    ctx.clearRect(0, 0, w, h);
+
+    // Subtle interactive container pill
+    ctx.fillStyle = hoverRatio !== null ? '#252a42' : '#181b2c';
+    ctx.beginPath();
+    if (ctx.roundRect) {
+      ctx.roundRect(2, 2, w - 4, h - 4, 14);
+    } else {
+      ctx.rect(2, 2, w - 4, h - 4);
+    }
+    ctx.fill();
+
+    ctx.strokeStyle = hoverRatio !== null ? '#818cf8' : '#313659';
+    ctx.lineWidth = 3;
+    ctx.stroke();
+
+    // Base track
+    ctx.fillStyle = '#334155';
+    ctx.beginPath();
+    if (ctx.roundRect) {
+      ctx.roundRect(padX, trackY, trackW, trackH, 6);
+    } else {
+      ctx.rect(padX, trackY, trackW, trackH);
+    }
+    ctx.fill();
+
+    // Filled progress
+    const fillW = Math.max(0, Math.min(trackW, trackW * progressRatio));
+    if (fillW > 0) {
+      const grad = ctx.createLinearGradient(padX, 0, padX + trackW, 0);
+      grad.addColorStop(0, '#6366f1');
+      grad.addColorStop(1, '#38bdf8');
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      if (ctx.roundRect) {
+        ctx.roundRect(padX, trackY, fillW, trackH, 6);
+      } else {
+        ctx.rect(padX, trackY, fillW, trackH);
+      }
+      ctx.fill();
+    }
+
+    // Gaze hover indicator line
+    if (hoverRatio !== null) {
+      const hx = padX + trackW * THREE.MathUtils.clamp(hoverRatio, 0, 1);
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.75)';
+      ctx.fillRect(hx - 2, trackY - 6, 4, trackH + 12);
+    }
+
+    // Current playback thumb knob
+    const kx = padX + fillW;
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.arc(kx, h / 2, 10, 0, Math.PI * 2);
+    ctx.fill();
+
+    if (this.seekBarMesh.material.map) {
+      this.seekBarMesh.material.map.needsUpdate = true;
+    }
+  }
+
+  drawTimeReadout(currentSec, durationSec, hoverRatio) {
+    if (!this.timeMesh || !this.timeMesh.userData) return;
+    const { canvas, ctx } = this.timeMesh.userData;
+    const w = canvas.width;
+    const h = canvas.height;
+
+    ctx.clearRect(0, 0, w, h);
+
+    ctx.fillStyle = '#181b2c';
+    ctx.beginPath();
+    if (ctx.roundRect) {
+      ctx.roundRect(2, 2, w - 4, h - 4, 12);
+    } else {
+      ctx.rect(2, 2, w - 4, h - 4);
+    }
+    ctx.fill();
+
+    const hasDur = Number.isFinite(durationSec) && durationSec > 0;
+    let label = `${this.formatTime(currentSec)} / ${hasDur ? this.formatTime(durationSec) : '--:--'}`;
+    ctx.fillStyle = '#e2e8f0';
+
+    if (hoverRatio !== null && hasDur) {
+      label = `➔ ${this.formatTime(hoverRatio * durationSec)}`;
+      ctx.fillStyle = '#7dd3fc';
+    }
+
+    ctx.font = 'bold 21px -apple-system, monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(label, w / 2, h / 2);
+
+    if (this.timeMesh.material.map) {
+      this.timeMesh.material.map.needsUpdate = true;
+    }
+  }
+
   /**
    * Bug 6 Fix: Reorient menu in Bed Mode so it tilts with the screen onto the ceiling
    */
   setTilt(pitchDegrees) {
     const pitchRad = THREE.MathUtils.degToRad(pitchDegrees);
-    // Relative to eye position (0, 1.4, 0), normal menu pos is (0, -0.98, -4.5)
-    const relY = -0.98;
+    // Relative to eye position (0, 1.4, 0), normal menu pos is (0, -1.04, -4.5)
+    const relY = -1.04;
     const relZ = -4.5;
 
     const newY = 1.4 + (relY * Math.cos(pitchRad) - relZ * Math.sin(pitchRad));
@@ -342,6 +534,11 @@ export class GazeUI {
   }
 
   update() {
+    // Update active subtitles cue
+    if (this.screen && this.screen.updateSubtitles) {
+      this.screen.updateSubtitles();
+    }
+
     // Dynamic Button Labels
     if (this.video) {
       if (this.playBtnMesh) {
@@ -378,20 +575,44 @@ export class GazeUI {
       }
     }
 
-    // Cast ray from center of head view
-    this.raycaster.setFromCamera({ x: 0, y: 0 }, this.rig.cameraL);
+    if (this.ccBtnMesh && this.screen) {
+      let ccLabel = '💬 CC';
+      if (performance.now() < this.ccHintUntil) {
+        ccLabel = 'Load .SRT';
+      } else if (this.screen.subtitleCues && this.screen.subtitleCues.length > 0) {
+        ccLabel = this.screen.subtitlesEnabled ? '💬 CC On' : '💬 CC Off';
+      }
+      if (this.ccBtnMesh.userData.currentText !== ccLabel) {
+        this.updateButtonText(this.ccBtnMesh, ccLabel);
+      }
+    }
+
+    // Cast ray from cyclopean head center along forward (-Z) gaze axis
+    this.rig.head.updateWorldMatrix(true, false);
+    this._rayOrigin.setFromMatrixPosition(this.rig.head.matrixWorld);
+    this._rayDir.set(0, 0, -1).transformDirection(this.rig.head.matrixWorld);
+    this.raycaster.set(this._rayOrigin, this._rayDir);
 
     let targetDistance = 6.0;
+    this.hoverSeekRatio = null;
 
     if (this.isMenuVisible) {
       const menuIntersects = this.raycaster.intersectObjects(this.interactiveObjects);
       if (menuIntersects.length > 0) {
-        const hit = menuIntersects[0].object;
-        targetDistance = Math.max(0.5, menuIntersects[0].distance);
-        if (this.hoveredObject !== hit) {
+        const firstHit = menuIntersects[0];
+        const hitObj = firstHit.object;
+        targetDistance = Math.max(0.5, firstHit.distance);
+
+        if (hitObj === this.seekBarMesh && firstHit.uv) {
+          this.hoverSeekRatio = THREE.MathUtils.clamp(firstHit.uv.x, 0, 1);
+        }
+
+        if (this.hoveredObject !== hitObj) {
           if (this.hoveredObject) this.hoveredObject.scale.set(1, 1, 1);
-          this.hoveredObject = hit;
-          this.hoveredObject.scale.set(1.08, 1.08, 1.08); // Hover highlight
+          this.hoveredObject = hitObj;
+          if (!this.hoveredObject.userData?.noHoverScale) {
+            this.hoveredObject.scale.set(1.08, 1.08, 1.08);
+          }
         }
       } else {
         if (this.hoveredObject) {
@@ -406,11 +627,32 @@ export class GazeUI {
       }
     }
 
-    // If not hovering over a menu button, test ray against cinema screen mesh
-    if (!this.hoveredObject && this.screen && this.screen.mesh) {
-      const screenIntersects = this.raycaster.intersectObject(this.screen.mesh);
+    // If not hovering over a UI item, test ray against cinema screen meshL
+    if (!this.hoveredObject && this.screen && this.screen.meshL) {
+      const screenIntersects = this.raycaster.intersectObject(this.screen.meshL);
       if (screenIntersects.length > 0) {
         targetDistance = Math.max(0.5, screenIntersects[0].distance);
+      }
+    }
+
+    // Redraw seek bar & time badge only when visible values change
+    if (this.isMenuVisible && this.video) {
+      const dur = Number.isFinite(this.video.duration) && this.video.duration > 0 ? this.video.duration : 0;
+      const cur = Number.isFinite(this.video.currentTime) ? this.video.currentTime : 0;
+      const ratio = dur > 0 ? cur / dur : 0;
+
+      const progressBucket = Math.round(ratio * 240);
+      const hoverBucket = this.hoverSeekRatio !== null ? Math.round(this.hoverSeekRatio * 100) : -1;
+      const seekKey = `${progressBucket}:${hoverBucket}`;
+      if (seekKey !== this.lastSeekRenderKey) {
+        this.lastSeekRenderKey = seekKey;
+        this.drawSeekBar(ratio, this.hoverSeekRatio);
+      }
+
+      const timeKey = `${Math.floor(cur)}:${Math.floor(dur)}:${hoverBucket}`;
+      if (timeKey !== this.lastTimeRenderKey) {
+        this.lastTimeRenderKey = timeKey;
+        this.drawTimeReadout(cur, dur, this.hoverSeekRatio);
       }
     }
 
@@ -419,7 +661,7 @@ export class GazeUI {
 
     // Scale reticle proportionally with distance to maintain optimal gaze reticle size
     const baseScale = targetDistance / 1.8;
-    const hoverScale = this.hoveredObject ? 1.35 : 1.0;
+    const hoverScale = this.hoveredObject && !this.hoveredObject.userData?.noHoverScale ? 1.35 : 1.0;
     const finalScale = baseScale * hoverScale;
     this.reticle.scale.set(finalScale, finalScale, finalScale);
   }

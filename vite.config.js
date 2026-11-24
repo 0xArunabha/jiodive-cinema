@@ -10,6 +10,15 @@ export default defineConfig({
   plugins: [
     basicSsl()
   ],
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          three: ['three']
+        }
+      }
+    }
+  },
   server: {
     host: '0.0.0.0',
     port: 5173,

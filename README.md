@@ -29,11 +29,13 @@ A static, browser-based Virtual Reality Theater player built with Three.js and V
   - 3D Full Side-by-Side (Full-SBS).
   - 3D Half Over-Under (Half-OU) with 2:1 anamorphic aspect correction.
   - 3D Full Over-Under (Full-OU).
+- **Interactive Timeline & Scrubbing:** Floating gaze seek bar with hover time preview (`➔ MM:SS`) and current/total duration readout directly inside VR, plus `⏪ -10s` / `⏩ +10s` quick skips.
+- **VR Subtitles (`.srt` / `.vtt`):** Load local `.srt` or `.vtt` subtitle files in the launcher to render stereo-converged captions on a curved layer just in front of the cinema screen (works in 2D, 3D SBS/OU, and Bed Mode, with live `💬 CC On/Off` toggling in VR).
 - **Local Files & Online URL Streaming:**
   - Load local video files (MP4 H.264/AAC, WebM) directly from device storage.
   - Stream CORS-enabled online video URLs (`https://...`).
   - Built-in Oceans HD sample stream with automatic MP4/WebM codec selection.
-- **Clean In-VR Navigation:** Switch rooms, toggle formats, adjust IPD, or click `🚪 Exit VR` anytime to return to the movie selection launcher without reloading.
+- **Clean In-VR Navigation & Saved Fit:** Switch rooms, toggle formats, cycle IPD (automatically saved across sessions), or click `🚪 Exit VR` anytime to return to the launcher without reloading.
 - **Screen Wake-Lock & Non-Blocking Entry:** Keeps the display awake while watching, re-acquires wake lock on `visibilitychange`, and enters VR immediately without stalling on WebView fullscreen/wake-lock promises.
 - **Mobile-Optimized Performance:** Lambert shading with baked sconce glow textures, no redundant per-frame `VideoTexture` uploads, paused 3D render loop behind the 2D launcher.
 
@@ -90,6 +92,8 @@ Open the Network URL on your phone over the same Wi-Fi network *(accept the loca
 | **Select Button / Action** | Aim the center reticle at any floating button and **click the JioDive physical button**. |
 | **Toggle Menu (Hide/Show)** | **Click the physical button** while aiming at empty space / movie screen. |
 | **Recenter Screen (Fix Drift)** | **Double-click** the physical button quickly (< 350ms). |
+| **Seek Timeline** | Aim anywhere along the top progress bar (displays `➔ MM:SS` preview) and **click** to jump directly to that timestamp. |
+| **Toggle Subtitles** | Click **💬 CC** in the top bar (`On` / `Off`) after loading an `.srt` or `.vtt` file in the launcher. |
 | **Cycle IPD** | Click **👁 IPD** in the VR menu (58mm ➔ 64mm ➔ 68mm ➔ 72mm). |
 | **Cycle Format** | Click **🕶 Format** in the VR menu (2D ➔ Half-SBS ➔ Full-SBS ➔ Half-OU ➔ Full-OU). |
 | **Bed / Lay-Down Mode** | Click **🛏 Bed Mode** to tilt both screen and menu upward together. |

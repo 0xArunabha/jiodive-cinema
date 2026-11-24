@@ -7,6 +7,8 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="JioDive VR" />
+  <link rel="icon" type="image/png" sizes="32x32" href="./favicon-32.png" />
+  <link rel="apple-touch-icon" sizes="180x180" href="./apple-touch-icon.png" />
   <link rel="manifest" href="./manifest.webmanifest" />
   <title>JioDive VR Cinema</title>
   <link rel="stylesheet" href="./src/style.css" />
@@ -45,6 +47,19 @@
           </button>
         </div>
         <div id="file-info" class="file-info hidden"></div>
+      </div>
+
+      <!-- Optional Subtitles Section -->
+      <div class="section">
+        <label class="section-title">Subtitles (Optional .SRT / .VTT)</label>
+        <div class="subtitle-picker-row">
+          <label class="secondary-btn sub-picker-label">
+            <span>💬 Load Subtitles (.srt / .vtt)</span>
+            <input type="file" id="subtitle-file-input" accept=".srt,.vtt,text/vtt" />
+          </label>
+          <button id="btn-clear-subtitles" class="secondary-btn btn-sm hidden" type="button">Clear</button>
+        </div>
+        <div id="subtitle-info" class="file-info hidden"></div>
       </div>
 
       <!-- Quick Settings -->

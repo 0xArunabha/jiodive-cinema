@@ -170,6 +170,24 @@ h1 {
   white-space: nowrap;
 }
 
+.btn-sm.hidden {
+  display: none;
+}
+
+.subtitle-picker-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.sub-picker-label {
+  flex: 1;
+}
+
+.sub-picker-label input[type="file"] {
+  display: none;
+}
+
 .secondary-btn {
   display: flex;
   align-items: center;

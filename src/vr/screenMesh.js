@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { getActiveCueText } from './subtitleParser.js';
 
 /**
  * Curved Virtual Cinema Screen Mesh
@@ -46,7 +47,13 @@ export class CinemaScreen {
     this.screenAnchor.position.y = (this.stageClearanceY + this.height / 2) - 1.4;
     this.container.add(this.screenAnchor);
 
+    // Subtitle state
+    this.subtitleCues = [];
+    this.subtitlesEnabled = false;
+    this.currentSubText = '';
+
     this.createScreenMeshes();
+    this.createSubtitleOverlay();
     this.setFormat('2d');
     this.initVideoListeners();
   }
@@ -168,6 +175,42 @@ export class CinemaScreen {
     this.screenAnchor.add(this.frameMesh);
   }
 
+  createSubtitleOverlay() {
+    this.subtitleCanvas = document.createElement('canvas');
+    this.subtitleCanvas.width = 1024;
+    this.subtitleCanvas.height = 256;
+    this.subtitleCtx = this.subtitleCanvas.getContext('2d');
+
+    this.subtitleTexture = new THREE.CanvasTexture(this.subtitleCanvas);
+    this.subtitleTexture.minFilter = THREE.LinearFilter;
+    this.subtitleTexture.magFilter = THREE.LinearFilter;
+    this.subtitleTexture.colorSpace = THREE.SRGBColorSpace;
+
+    const subDistance = this.distance - 0.14;
+    const subAngle = THREE.MathUtils.degToRad(44);
+    const subHeight = 0.9;
+    const subThetaStart = Math.PI - subAngle / 2;
+
+    const subGeom = new THREE.CylinderGeometry(
+      subDistance, subDistance, subHeight, 32, 1, true, subThetaStart, subAngle
+    );
+    subGeom.scale(-1, 1, 1);
+
+    const subMat = new THREE.MeshBasicMaterial({
+      map: this.subtitleTexture,
+      transparent: true,
+      depthWrite: false,
+      side: THREE.DoubleSide
+    });
+
+    this.subtitleMesh = new THREE.Mesh(subGeom, subMat);
+    this.subtitleMesh.layers.set(0); // Render crisp stereo depth for both eyes
+    this.subtitleMesh.position.y = -this.height / 2 + 0.56;
+    this.subtitleMesh.renderOrder = 10;
+    this.subtitleMesh.visible = false;
+    this.screenAnchor.add(this.subtitleMesh);
+  }
+
   initVideoListeners() {
     const switchToVideo = () => {
       const is3D = (this.format !== '2d');
@@ -273,6 +316,9 @@ export class CinemaScreen {
       this.frameMesh.geometry.dispose();
       this.frameMesh.geometry = borderGeom;
     }
+    if (this.subtitleMesh) {
+      this.subtitleMesh.position.y = -this.height / 2 + 0.56;
+    }
   }
 
   /**
@@ -331,6 +377,99 @@ export class CinemaScreen {
     this.videoTextureL.needsUpdate = true;
     if (this.videoTextureR) this.videoTextureR.needsUpdate = true;
     this.updateAspectRatio();
+  }
+
+  /**
+   * Load parsed SRT/VTT cue list and enable captions
+   */
+  setSubtitles(cues) {
+    this.subtitleCues = Array.isArray(cues) ? cues : [];
+    this.subtitlesEnabled = this.subtitleCues.length > 0;
+    this.currentSubText = '';
+    this.updateSubtitles(true);
+  }
+
+  toggleSubtitles() {
+    this.subtitlesEnabled = !this.subtitlesEnabled;
+    this.updateSubtitles(true);
+    return this.subtitlesEnabled;
+  }
+
+  updateSubtitles(forceRedraw = false) {
+    if (!this.subtitleMesh) return;
+
+    const nextText = (this.subtitlesEnabled && this.subtitleCues.length > 0 && this.video)
+      ? getActiveCueText(this.subtitleCues, this.video.currentTime)
+      : '';
+
+    if (nextText !== this.currentSubText || forceRedraw) {
+      this.currentSubText = nextText;
+      if (!nextText) {
+        this.subtitleMesh.visible = false;
+        return;
+      }
+      this.renderSubtitleCanvas(nextText);
+      this.subtitleMesh.visible = true;
+    }
+  }
+
+  renderSubtitleCanvas(text) {
+    const ctx = this.subtitleCtx;
+    const width = this.subtitleCanvas.width;
+    const height = this.subtitleCanvas.height;
+
+    ctx.clearRect(0, 0, width, height);
+    ctx.font = 'bold 40px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+
+    // Word-wrap cue paragraphs onto max ~3 readable lines
+    const maxLineWidth = 920;
+    const lines = [];
+    for (const para of text.split('\n')) {
+      const words = para.split(/\s+/);
+      let current = '';
+      for (const word of words) {
+        const candidate = current ? `${current} ${word}` : word;
+        if (ctx.measureText(candidate).width > maxLineWidth && current) {
+          lines.push(current);
+          current = word;
+        } else {
+          current = candidate;
+        }
+      }
+      if (current) lines.push(current);
+    }
+
+    const visibleLines = lines.slice(-3);
+    const lineHeight = 52;
+    const blockHeight = visibleLines.length * lineHeight + 24;
+    const maxTextWidth = visibleLines.reduce((max, l) => Math.max(max, ctx.measureText(l).width), 0);
+    const pillWidth = Math.min(width - 40, maxTextWidth + 56);
+    const startY = height - blockHeight - 16;
+
+    // Translucent cinema caption backing pill for high contrast over bright frames
+    ctx.fillStyle = 'rgba(8, 10, 18, 0.72)';
+    if (ctx.roundRect) {
+      ctx.beginPath();
+      ctx.roundRect((width - pillWidth) / 2, startY, pillWidth, blockHeight, 14);
+      ctx.fill();
+    } else {
+      ctx.fillRect((width - pillWidth) / 2, startY, pillWidth, blockHeight);
+    }
+
+    // Draw text lines with dark outline stroke + crisp white fill
+    ctx.lineWidth = 5;
+    ctx.strokeStyle = 'rgba(0, 0, 0, 0.9)';
+    ctx.fillStyle = '#ffffff';
+
+    visibleLines.forEach((line, idx) => {
+      const y = startY + 12 + (idx + 0.5) * lineHeight;
+      ctx.strokeText(line, width / 2, y);
+      ctx.fillText(line, width / 2, y);
+    });
+
+    this.subtitleTexture.needsUpdate = true;
   }
 
   /**
