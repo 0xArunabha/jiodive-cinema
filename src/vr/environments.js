@@ -554,20 +554,23 @@ export class Environments {
     this.cinemaGroup.add(exitLight);
   }
 
-  setEnvironment(envName, cinemaScreen) {
+  setEnvironment(envName, cinemaScreen, gazeUI) {
     this.currentEnv = envName;
 
     if (envName === 'void') {
       this.cinemaGroup.visible = false;
       cinemaScreen.setTilt(0);
+      if (gazeUI && gazeUI.setTilt) gazeUI.setTilt(0);
     } else if (envName === 'bed') {
       this.cinemaGroup.visible = false;
-      // Reorient screen 75 degrees up towards ceiling for comfortable flat lying down
+      // Reorient screen and gaze menu 75 degrees up towards ceiling for comfortable flat lying down
       cinemaScreen.setTilt(75);
+      if (gazeUI && gazeUI.setTilt) gazeUI.setTilt(75);
     } else {
       // Cinema Hall
       this.cinemaGroup.visible = true;
       cinemaScreen.setTilt(0);
+      if (gazeUI && gazeUI.setTilt) gazeUI.setTilt(0);
     }
   }
 }

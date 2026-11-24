@@ -3,8 +3,9 @@ import * as THREE from 'three';
 /**
  * In-VR Floating Gaze & Physical Click UI
  * Optimized for JioDive conductive physical button:
- * - Single Click: Selects aimed button OR starts video / toggles menu visibility
- * - Double Click: Instantly recenters VR view
+ * - Single Click: Selects aimed button OR starts video / toggles menu visibility (debounced)
+ * - Double Click: Instantly recenters VR view without side-effects
+ * - Bed Mode: Automatically tilts menu upward with screen
  */
 export class GazeUI {
   constructor(stereoRig, videoElement, cinemaScreen, environments) {
@@ -18,8 +19,9 @@ export class GazeUI {
     this.raycaster = new THREE.Raycaster();
     this.isMenuVisible = true;
 
-    // Physical button double-click detection
+    // Physical button double-click detection & single-click debounce timer
     this.lastClickTime = 0;
+    this.clickTimeout = null;
 
     // Reticle
     this.createReticle();
@@ -50,7 +52,7 @@ export class GazeUI {
   createControlPanel() {
     this.menuGroup = new THREE.Group();
     // Position floating panel comfortably in lower gaze view, tilted toward viewer
-    this.menuGroup.position.set(0, 0.3, -4.5);
+    this.menuGroup.position.set(0, 0.2, -4.5);
     this.menuGroup.rotation.x = -0.22;
     this.rig.scene.add(this.menuGroup);
 
@@ -89,7 +91,7 @@ export class GazeUI {
     this.interactiveObjects.push(audioBtn);
     this.audioBtnMesh = audioBtn;
 
-    const formatBtn = this.createButtonMesh('🕶 2D / 3D', 0.0, -0.16, () => this.cycleFormat());
+    const formatBtn = this.createButtonMesh('🕶 2D', 0.0, -0.16, () => this.cycleFormat());
     this.menuGroup.add(formatBtn);
     this.interactiveObjects.push(formatBtn);
     this.formatBtnMesh = formatBtn;
@@ -190,31 +192,44 @@ export class GazeUI {
   }
 
   initClickListeners() {
-    const handleTrigger = () => {
+    const handleTrigger = (e) => {
+      // Bug 2: Ignore any pointer events if VR is not active (prevents launcher taps triggering VR UI)
+      if (!this.rig.isVrActive) return;
+
       const now = performance.now();
       // Double click detection (<350ms) -> Instant Recenter!
       if (now - this.lastClickTime < 350) {
-        this.rig.recenter();
+        // Bug 4: Cancel pending single click action so recenter has zero side-effects
+        if (this.clickTimeout) {
+          clearTimeout(this.clickTimeout);
+          this.clickTimeout = null;
+        }
         this.lastClickTime = 0;
+        this.rig.recenter();
         return;
       }
       this.lastClickTime = now;
 
-      // Single Click:
-      if (this.hoveredObject && this.hoveredObject.userData.onClick) {
-        // Clicked a UI button!
-        this.hoveredObject.userData.onClick();
-        this.pulseButton(this.hoveredObject);
-      } else {
-        // Clicked empty space:
-        // If movie is paused (e.g. autoplay blocked), tapping starts playback immediately!
-        if (this.video && this.video.paused) {
-          this.video.play().catch((e) => console.log('Tap play failed:', e));
+      // Capture target object at time of tap
+      const targetObj = this.hoveredObject;
+
+      // Bug 4: Debounce single click action (~280ms) so double-click cancels cleanly
+      this.clickTimeout = setTimeout(() => {
+        this.clickTimeout = null;
+        if (!this.rig.isVrActive) return;
+
+        if (targetObj && targetObj.userData && targetObj.userData.onClick) {
+          targetObj.userData.onClick();
+          this.pulseButton(targetObj);
         } else {
-          // Toggle Menu Visibility (clean movie view)
-          this.toggleMenu();
+          // Clicked empty space
+          if (this.video && this.video.paused) {
+            this.video.play().catch((err) => console.log('Tap play failed:', err));
+          } else {
+            this.toggleMenu();
+          }
         }
-      }
+      }, 280);
     };
 
     // JioDive physical button triggers pointerdown / touchstart on the screen
@@ -255,18 +270,34 @@ export class GazeUI {
   cycleEnvironment() {
     const envs = ['cinema', 'void'];
     const next = envs[(envs.indexOf(this.environments.currentEnv) + 1) % envs.length];
-    this.environments.setEnvironment(next, this.screen);
+    this.environments.setEnvironment(next, this.screen, this);
   }
 
   toggleBedMode() {
     const target = this.environments.currentEnv === 'bed' ? 'cinema' : 'bed';
-    this.environments.setEnvironment(target, this.screen);
+    this.environments.setEnvironment(target, this.screen, this);
   }
 
   cycleFormat() {
-    const formats = ['2d', '3d-sbs', '3d-ou'];
+    const formats = ['2d', '3d-hsbs', '3d-fsbs', '3d-hou', '3d-fou'];
     const next = formats[(formats.indexOf(this.screen.format) + 1) % formats.length];
     this.screen.setFormat(next);
+  }
+
+  /**
+   * Bug 6 Fix: Reorient menu in Bed Mode so it tilts with the screen onto the ceiling
+   */
+  setTilt(pitchDegrees) {
+    const pitchRad = THREE.MathUtils.degToRad(pitchDegrees);
+    // Relative to eye position (0, 1.4, 0), normal menu pos is (0, -1.2, -4.5)
+    const relY = -1.2;
+    const relZ = -4.5;
+
+    const newY = 1.4 + (relY * Math.cos(pitchRad) - relZ * Math.sin(pitchRad));
+    const newZ = relY * Math.sin(pitchRad) + relZ * Math.cos(pitchRad);
+
+    this.menuGroup.position.set(0, newY, newZ);
+    this.menuGroup.rotation.x = -0.22 + pitchRad;
   }
 
   update() {
@@ -288,8 +319,10 @@ export class GazeUI {
 
       if (this.formatBtnMesh) {
         let fmtLabel = '🕶 2D';
-        if (this.screen.format === '3d-sbs') fmtLabel = '👓 3D SBS';
-        else if (this.screen.format === '3d-ou') fmtLabel = '👓 3D OU';
+        if (this.screen.format === '3d-hsbs' || this.screen.format === '3d-sbs') fmtLabel = '👓 Half-SBS';
+        else if (this.screen.format === '3d-fsbs') fmtLabel = '👓 Full-SBS';
+        else if (this.screen.format === '3d-hou' || this.screen.format === '3d-ou') fmtLabel = '👓 Half-OU';
+        else if (this.screen.format === '3d-fou') fmtLabel = '👓 Full-OU';
         if (this.formatBtnMesh.userData.currentText !== fmtLabel) {
           this.updateButtonText(this.formatBtnMesh, fmtLabel);
         }

@@ -2,7 +2,7 @@ import * as THREE from 'three';
 
 /**
  * Curved Virtual Cinema Screen Mesh
- * Supports 2D, 3D Side-by-Side (SBS), and 3D Over-Under (OU) video playback.
+ * Supports 2D, 3D Half-SBS, 3D Full-SBS, 3D Half-OU, and 3D Full-OU video playback.
  */
 export class CinemaScreen {
   constructor(scene, videoElement) {
@@ -14,7 +14,11 @@ export class CinemaScreen {
     this.curveAngle = THREE.MathUtils.degToRad(64); // ~64 degree horizontal cinema arc
     this.chordWidth = 2 * this.distance * Math.sin(this.curveAngle / 2); // ~6.88m wide
     this.height = this.chordWidth / (16 / 9); // ~3.87m height for 16:9
-    this.format = '2d'; // '2d', '3d-sbs', '3d-ou'
+    this.format = '2d'; // '2d', '3d-hsbs', '3d-fsbs', '3d-hou', '3d-fou'
+
+    // Stage clearance: Stage tops out at Y = 0.41m.
+    // Setting bottom edge to 0.55m gives a clean 14cm clearance above stage.
+    this.stageClearanceY = 0.55;
 
     // Standby canvas texture (shown before video starts or while loading)
     this.standbyTexture = this.createCanvasTexture(
@@ -33,10 +37,15 @@ export class CinemaScreen {
     this.videoTextureR.magFilter = THREE.LinearFilter;
     this.videoTextureR.colorSpace = THREE.SRGBColorSpace;
 
-    // Root screen container placed at eye height Y = 1.4
+    // Root screen container placed at eye height Y = 1.4 (rotation pivot for Bed Mode)
     this.container = new THREE.Group();
     this.container.position.set(0, 1.4, 0);
     this.scene.add(this.container);
+
+    // Screen Anchor group: elevated so screen bottom edge clears stage
+    this.screenAnchor = new THREE.Group();
+    this.screenAnchor.position.y = (this.stageClearanceY + this.height / 2) - 1.4;
+    this.container.add(this.screenAnchor);
 
     this.createScreenMeshes();
     this.setFormat('2d');
@@ -137,12 +146,12 @@ export class CinemaScreen {
     // Left Screen Mesh
     this.meshL = new THREE.Mesh(geometry, this.materialL);
     this.meshL.layers.set(1); // Left Eye Camera Only
-    this.container.add(this.meshL);
+    this.screenAnchor.add(this.meshL);
 
     // Right Screen Mesh
     this.meshR = new THREE.Mesh(geometry.clone(), this.materialR);
     this.meshR.layers.set(2); // Right Eye Camera Only
-    this.container.add(this.meshR);
+    this.screenAnchor.add(this.meshR);
 
     // Screen Border / Frame
     const borderDistance = this.distance + 0.05;
@@ -157,7 +166,7 @@ export class CinemaScreen {
     const borderMat = new THREE.MeshBasicMaterial({ color: 0x07080d, side: THREE.DoubleSide });
     this.frameMesh = new THREE.Mesh(borderGeom, borderMat);
     this.frameMesh.layers.set(0); // Visible to both eyes
-    this.container.add(this.frameMesh);
+    this.screenAnchor.add(this.frameMesh);
   }
 
   initVideoListeners() {
@@ -201,10 +210,21 @@ export class CinemaScreen {
   updateAspectRatio() {
     if (this.video && this.video.videoWidth && this.video.videoHeight) {
       let aspect = this.video.videoWidth / this.video.videoHeight;
-      if (this.format === '3d-sbs') {
+      // Full SBS: file is 3840x1080 -> each eye is (width/2) / height
+      if (this.format === '3d-fsbs') {
         aspect = (this.video.videoWidth / 2) / this.video.videoHeight;
-      } else if (this.format === '3d-ou') {
+      }
+      // Half SBS (HSBS): file is 1920x1080 anamorphic (each eye squeezed 2:1 horizontally) -> display aspect is W/H (16:9)
+      else if (this.format === '3d-hsbs' || this.format === '3d-sbs') {
+        aspect = this.video.videoWidth / this.video.videoHeight;
+      }
+      // Full OU: file is 1920x2160 -> each eye is width / (height/2)
+      else if (this.format === '3d-fou') {
         aspect = this.video.videoWidth / (this.video.videoHeight / 2);
+      }
+      // Half OU (HOU): file is 1920x1080 anamorphic (each eye squeezed 2:1 vertically) -> display aspect is W/H (16:9)
+      else if (this.format === '3d-hou' || this.format === '3d-ou') {
+        aspect = this.video.videoWidth / this.video.videoHeight;
       }
 
       if (aspect > 0 && isFinite(aspect)) {
@@ -219,6 +239,11 @@ export class CinemaScreen {
   }
 
   rebuildGeometry() {
+    // Recompute screen elevation so bottom edge clears stage
+    if (this.screenAnchor) {
+      this.screenAnchor.position.y = (this.stageClearanceY + this.height / 2) - 1.4;
+    }
+
     const thetaStart = Math.PI - this.curveAngle / 2;
 
     const newGeom = new THREE.CylinderGeometry(
@@ -251,12 +276,12 @@ export class CinemaScreen {
   }
 
   /**
-   * Set 2D, 3D SBS, or 3D Over-Under projection
+   * Set 2D, 3D Half-SBS, 3D Full-SBS, 3D Half-OU, or 3D Full-OU
    */
   setFormat(format) {
     this.format = format;
 
-    if (format === '3d-sbs') {
+    if (format === '3d-hsbs' || format === '3d-fsbs' || format === '3d-sbs') {
       // Left eye sees left half: UV [0.0, 0.5]
       this.videoTextureL.repeat.set(0.5, 1);
       this.videoTextureL.offset.set(0, 0);
@@ -264,7 +289,7 @@ export class CinemaScreen {
       // Right eye sees right half: UV [0.5, 1.0]
       this.videoTextureR.repeat.set(0.5, 1);
       this.videoTextureR.offset.set(0.5, 0);
-    } else if (format === '3d-ou') {
+    } else if (format === '3d-hou' || format === '3d-fou' || format === '3d-ou') {
       // Left eye sees top half
       this.videoTextureL.repeat.set(1, 0.5);
       this.videoTextureL.offset.set(0, 0.5);

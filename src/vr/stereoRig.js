@@ -48,9 +48,13 @@ export class StereoRig {
 
     // Orientation tracking state
     this.deviceOrientation = { alpha: 0, beta: 0, gamma: 0 };
-    this.screenOrientation = 0;
+    // Bug 3 Fix: Read screen orientation immediately at startup
+    this.screenOrientation = this.getScreenOrientationAngle();
     this.hasGyro = false;
     this.isVrActive = false;
+
+    // Bug 5 Fix: Ensure recenter works on iOS once first gyro event arrives
+    this.needsRecenterOnFirstGyro = true;
 
     // Recenter offset (yaw offset in radians)
     this.yawOffset = 0;
@@ -61,6 +65,16 @@ export class StereoRig {
     this.desktopEuler = new THREE.Euler(0, 0, 0, 'YXZ');
 
     this.initListeners();
+  }
+
+  getScreenOrientationAngle() {
+    if (window.screen && window.screen.orientation && typeof window.screen.orientation.angle === 'number') {
+      return window.screen.orientation.angle;
+    }
+    if (typeof window.orientation === 'number') {
+      return window.orientation;
+    }
+    return 0;
   }
 
   updateCameras() {
@@ -77,20 +91,31 @@ export class StereoRig {
     // Window resize
     window.addEventListener('resize', () => this.onResize());
 
-    // Screen orientation changes
-    window.addEventListener('orientationchange', () => {
-      this.screenOrientation = window.orientation || 0;
-    });
+    // Screen orientation changes (modern screen.orientation.onchange + fallback)
+    const updateOrientation = () => {
+      this.screenOrientation = this.getScreenOrientationAngle();
+    };
+
+    if (window.screen && window.screen.orientation) {
+      window.screen.orientation.addEventListener('change', updateOrientation);
+    }
+    window.addEventListener('orientationchange', updateOrientation);
 
     // Device orientation (gyroscope)
     window.addEventListener('deviceorientation', (e) => {
       if (e.alpha !== null) {
+        const wasGyroUnavailable = !this.hasGyro;
         this.hasGyro = true;
         this.deviceOrientation = {
           alpha: THREE.MathUtils.degToRad(e.alpha || 0),
           beta: THREE.MathUtils.degToRad(e.beta || 0),
           gamma: THREE.MathUtils.degToRad(e.gamma || 0)
         };
+
+        // Bug 5 Fix: If VR was entered before gyro data arrived, execute deferred recenter now
+        if (wasGyroUnavailable && this.needsRecenterOnFirstGyro) {
+          this.recenter();
+        }
       }
     });
 
@@ -153,8 +178,10 @@ export class StereoRig {
     if (this.hasGyro) {
       // Offset yaw to current alpha
       this.yawOffset = this.deviceOrientation.alpha;
+      this.needsRecenterOnFirstGyro = false;
     } else {
       this.desktopEuler.set(0, 0, 0);
+      this.needsRecenterOnFirstGyro = true;
     }
     console.log('VR View Recentered');
   }

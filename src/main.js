@@ -97,17 +97,44 @@ btnLoadDemo.addEventListener('click', () => {
   fileInfo.classList.remove('hidden');
 });
 
-// Screen Wake Lock (Keeps phone screen awake inside JioDive)
+// Screen Wake Lock (Bug 8 Fix: Keeps screen awake and re-acquires on visibility change)
 async function requestWakeLock() {
   if ('wakeLock' in navigator) {
     try {
       wakeLock = await navigator.wakeLock.request('screen');
       console.log('Screen Wake Lock active');
+      wakeLock.addEventListener('release', () => {
+        console.log('Screen Wake Lock was released');
+        wakeLock = null;
+      });
     } catch (err) {
-      console.warn('Wake Lock failed:', err);
+      console.warn('Wake Lock request failed:', err);
     }
   }
 }
+
+async function releaseWakeLock() {
+  if (wakeLock !== null) {
+    try {
+      await wakeLock.release();
+      wakeLock = null;
+      console.log('Screen Wake Lock released');
+    } catch (err) {
+      console.warn('Error releasing wake lock:', err);
+    }
+  }
+}
+
+// Re-request wake lock when returning from background
+document.addEventListener('visibilitychange', async () => {
+  if (document.visibilityState === 'visible' && rig.isVrActive) {
+    await requestWakeLock();
+  } else if (document.visibilityState === 'hidden') {
+    await releaseWakeLock();
+  }
+});
+
+window.addEventListener('pagehide', releaseWakeLock);
 
 // Enter VR
 btnEnterVr.addEventListener('click', async () => {
@@ -140,8 +167,11 @@ btnEnterVr.addEventListener('click', async () => {
     });
   }
 
-  // Request Gyroscope permissions
-  await rig.requestGyroPermission();
+  // Bug 5 Fix: Request Gyroscope permissions with iOS alert if denied
+  const gyroGranted = await rig.requestGyroPermission();
+  if (!gyroGranted) {
+    alert('Motion & Orientation access was denied. If on iPhone, please allow Motion & Orientation access in iOS Settings > Safari so VR head-tracking works.');
+  }
 
   // Fullscreen and orientation lock
   try {
@@ -158,9 +188,9 @@ btnEnterVr.addEventListener('click', async () => {
 
   await requestWakeLock();
 
-  // Apply selected settings
+  // Apply selected settings (Bug 6 Fix: pass gazeUI so Bed Mode tilts menu as well)
   cinemaScreen.setFormat(modeSelect.value);
-  environments.setEnvironment(envSelect.value, cinemaScreen);
+  environments.setEnvironment(envSelect.value, cinemaScreen, gazeUI);
 
   // If video is still paused, attempt play once more
   if (video.paused) {
