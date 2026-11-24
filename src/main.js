@@ -21,7 +21,29 @@ const ipdSelect = document.getElementById('ipd-select');
 const fovSelect = document.getElementById('fov-select');
 
 // Verified high-reliability sample video with full CORS support (VideoJS CDN)
-const DEMO_VIDEO_URL = 'https://vjs.zencdn.net/v/oceans.mp4';
+const DEMO_VIDEO_MP4 = 'https://vjs.zencdn.net/v/oceans.mp4';
+const DEMO_VIDEO_WEBM = 'https://vjs.zencdn.net/v/oceans.webm';
+
+function pickSupportedDemoUrl() {
+  if (video.canPlayType('video/mp4; codecs="avc1.42E01E"') !== '') {
+    return DEMO_VIDEO_MP4;
+  }
+  if (video.canPlayType('video/webm') !== '') {
+    return DEMO_VIDEO_WEBM;
+  }
+  return DEMO_VIDEO_MP4;
+}
+
+function loadDemoVideo(showBanner = true) {
+  video.crossOrigin = 'anonymous';
+  video.src = pickSupportedDemoUrl();
+  video.load();
+  if (showBanner) {
+    fileInfo.className = 'file-info';
+    fileInfo.textContent = 'Loaded: Oceans HD (Online Sample)';
+    fileInfo.classList.remove('hidden');
+  }
+}
 
 // Setup Three.js Scene & Renderer
 const scene = new THREE.Scene();
@@ -93,14 +115,9 @@ fileInput.addEventListener('change', (e) => {
   }
 });
 
-// Demo Video (Item 6 Fix: verified CORS video)
+// Demo Video (Item 6 Fix: verified CORS video with MP4/WebM codec detection)
 btnLoadDemo.addEventListener('click', () => {
-  video.crossOrigin = 'anonymous';
-  video.src = DEMO_VIDEO_URL;
-  video.load();
-  fileInfo.className = 'file-info';
-  fileInfo.textContent = `Loaded: Oceans HD (Online Sample)`;
-  fileInfo.classList.remove('hidden');
+  loadDemoVideo(true);
 });
 
 // Online URL Streaming (Item 5 Fix)
@@ -162,20 +179,22 @@ document.addEventListener('visibilitychange', async () => {
 
 window.addEventListener('pagehide', releaseWakeLock);
 
-// Handle Fullscreen exit (Item 3 Fix: auto exit VR if user presses Esc or swipes down)
+// Handle Fullscreen exit (Item 3 Fix: auto exit VR only when leaving an active fullscreen session)
+let isFullscreenActive = false;
 document.addEventListener('fullscreenchange', () => {
-  if (!document.fullscreenElement && rig.isVrActive) {
+  if (document.fullscreenElement) {
+    isFullscreenActive = true;
+  } else if (isFullscreenActive && rig.isVrActive) {
+    isFullscreenActive = false;
     gazeUI.exitVR();
   }
 });
 
 // Enter VR
-btnEnterVr.addEventListener('click', async () => {
+btnEnterVr.addEventListener('click', () => {
   // If no video loaded, load demo automatically
   if (!video.src) {
-    video.crossOrigin = 'anonymous';
-    video.src = DEMO_VIDEO_URL;
-    video.load();
+    loadDemoVideo(false);
   }
 
   // CRITICAL: Trigger playback SYNCHRONOUSLY directly inside the user click event!
@@ -199,25 +218,34 @@ btnEnterVr.addEventListener('click', async () => {
     });
   }
 
-  // Request Gyroscope permissions with iOS alert if denied
-  const gyroGranted = await rig.requestGyroPermission();
-  if (!gyroGranted) {
-    alert('Motion & Orientation access was denied. If on iPhone, please allow Motion & Orientation access in iOS Settings > Safari so VR head-tracking works.');
+  // Trigger iOS Gyroscope permission synchronously inside user gesture without blocking VR entry
+  rig.requestGyroPermission().then((gyroGranted) => {
+    if (!gyroGranted) {
+      alert('Motion & Orientation access was denied. If on iPhone, please allow Motion & Orientation access in iOS Settings > Safari so VR head-tracking works.');
+    }
+  });
+
+  // Trigger Fullscreen, orientation lock, and Wake Lock non-blocking
+  // (embedded WebViews and iOS Safari may leave fullscreen/wakelock Promises pending or unsupported)
+  if (document.documentElement.requestFullscreen) {
+    try {
+      document.documentElement.requestFullscreen()
+        .then(() => {
+          if (window.screen && window.screen.orientation && window.screen.orientation.lock) {
+            return window.screen.orientation.lock('landscape').catch(() => {});
+          }
+        })
+        .catch(() => {
+          console.log('Fullscreen skipped or denied');
+        });
+    } catch (err) {
+      console.log('Fullscreen call failed:', err);
+    }
+  } else if (window.screen && window.screen.orientation && window.screen.orientation.lock) {
+    window.screen.orientation.lock('landscape').catch(() => {});
   }
 
-  // Fullscreen and orientation lock
-  try {
-    if (document.documentElement.requestFullscreen) {
-      await document.documentElement.requestFullscreen();
-    }
-    if (window.screen && window.screen.orientation && window.screen.orientation.lock) {
-      await window.screen.orientation.lock('landscape').catch(() => {});
-    }
-  } catch (err) {
-    console.log('Fullscreen/orientation lock skipped or denied');
-  }
-
-  await requestWakeLock();
+  requestWakeLock().catch(() => {});
 
   // Apply selected settings (Format, Environment, IPD, FOV)
   cinemaScreen.setFormat(modeSelect.value);
@@ -230,12 +258,7 @@ btnEnterVr.addEventListener('click', async () => {
     rig.setFOV(parseFloat(fovSelect.value));
   }
 
-  // If video is still paused, attempt play once more
-  if (video.paused) {
-    video.play().catch((e) => console.log('Deferred play:', e));
-  }
-
-  // Hide 2D launcher
+  // Hide 2D launcher & enter VR immediately
   launcher.classList.add('hidden');
   rig.isVrActive = true;
   rig.recenter();

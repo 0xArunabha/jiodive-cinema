@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 export default defineConfig({
+  base: './',
   // Store Vite cache in system temp folder outside OneDrive to prevent EPERM file locking
   cacheDir: path.join(os.tmpdir(), 'vite-cache-jiodive'),
   plugins: [

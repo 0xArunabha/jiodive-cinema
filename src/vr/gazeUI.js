@@ -51,9 +51,10 @@ export class GazeUI {
 
   createControlPanel() {
     this.menuGroup = new THREE.Group();
-    // Position floating panel comfortably in lower gaze view, tilted toward viewer
-    this.menuGroup.position.set(0, 0.2, -4.5);
-    this.menuGroup.rotation.x = -0.22;
+    // Position floating panel comfortably in lower gaze view, scaled to stay clear of armrests & fit all aspect ratios
+    this.menuGroup.position.set(0, 0.42, -4.5);
+    this.menuGroup.rotation.x = -0.2;
+    this.menuGroup.scale.set(0.76, 0.76, 0.76);
     this.rig.scene.add(this.menuGroup);
 
     // Background Plate
@@ -329,15 +330,15 @@ export class GazeUI {
    */
   setTilt(pitchDegrees) {
     const pitchRad = THREE.MathUtils.degToRad(pitchDegrees);
-    // Relative to eye position (0, 1.4, 0), normal menu pos is (0, -1.2, -4.5)
-    const relY = -1.2;
+    // Relative to eye position (0, 1.4, 0), normal menu pos is (0, -0.98, -4.5)
+    const relY = -0.98;
     const relZ = -4.5;
 
     const newY = 1.4 + (relY * Math.cos(pitchRad) - relZ * Math.sin(pitchRad));
     const newZ = relY * Math.sin(pitchRad) + relZ * Math.cos(pitchRad);
 
     this.menuGroup.position.set(0, newY, newZ);
-    this.menuGroup.rotation.x = -0.22 + pitchRad;
+    this.menuGroup.rotation.x = -0.2 + pitchRad;
   }
 
   update() {

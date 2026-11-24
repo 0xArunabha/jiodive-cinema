@@ -1,77 +1,85 @@
 # 🥽 JioDive VR Cinema
 
-A modern, high-performance Virtual Reality Theater player designed specifically for the **JioDive VR Headset** and mobile browsers (Android Chrome, Brave, Samsung Internet, and iOS Safari).
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
+A static, browser-based Virtual Reality Theater player built with Three.js and Vite for the **JioDive VR Headset** and mobile browsers (Android Chrome, Brave, Samsung Internet, and iOS Safari).
+
+> **Hosted Demo (HTTPS):** [`https://0xarunabha.github.io/jiodive-cinema/`](https://0xarunabha.github.io/jiodive-cinema/)  
+> *(Serves the static `dist/` build via [GitHub Pages workflow](.github/workflows/deploy.yml) — enable **Settings ➔ Pages ➔ GitHub Actions** once on the repository so gyroscope, wake lock, and fullscreen run over trusted HTTPS without local Vite setup or self-signed SSL warnings.)*
+
+![JioDive VR Cinema dual-eye theater preview](docs/vr-cinema-preview.png)
 
 ---
 
 ## ✨ Features
 
-- **Stereoscopic Dual-Eye Rendering:** Software side-by-side stereoscopic rendering with customizable Interpupillary Distance (IPD: 58mm, 64mm, 68mm, 72mm) and Field of View (FOV: 70°–85°), adjustable both in the launcher and live inside VR.
-- **Dynamic Reticle Depth Matching:** The gaze reticle dynamically projects to the exact 3D distance of whatever you're looking at (floating buttons at ~4.5m or movie screen at ~6.5m) with proportional scaling, completely eliminating stereo diplopia (double vision).
-- **Physical Click Trigger Integration:** Uses JioDive's physical capacitive conductive button:
+- **Stereoscopic Dual-Eye Rendering:** Software side-by-side stereoscopic rendering with customizable Interpupillary Distance (IPD: 58mm, 64mm, 68mm, 72mm) and Field of View (FOV: 70°–85°), adjustable both in the launcher and live inside VR. *(No per-device optical barrel distortion shader is applied.)*
+- **Dynamic Reticle Depth Matching:** The gaze reticle dynamically projects to the exact 3D distance of whatever you're looking at (floating buttons at ~4.5m or movie screen at ~6.5m) with proportional scaling, avoiding stereo diplopia (double vision).
+- **Physical Click Trigger Integration:** Uses JioDive's capacitive button:
   - Single click on a button to activate.
   - Single click in empty space to toggle menu visibility.
-  - Fast double click to instantly recenter gyro drift without side effects.
+  - Fast double click (< 350ms) to recenter yaw drift without triggering single-click actions.
 - **Multiple Virtual Environments:**
-  - 🏛 **Grand Cinema Hall:** Multi-tier theater with curved screen, aisle runner lights, and stage clearance.
-  - 🌌 **Void Mode (OLED):** Pure pitch black space with floating screen (conserves mobile battery, maximum contrast).
-  - 🛏 **Bed Mode:** Screen and control menu reoriented together to the ceiling so you can watch movies comfortably while lying down flat.
+  - 🏛 **Grand Cinema Hall:** Multi-tier theater with curved screen, amber aisle runner LED strips, stage clearance, and real-time screen light bounce.
+  - 🌌 **Void Mode (OLED):** Pure pitch black space with floating screen (skips environment lighting updates and minimizes pixel draw for mobile battery life).
+  - 🛏 **Bed Mode:** Screen and control menu reorient upward together onto the ceiling so you can watch lying flat.
 - **Comprehensive 3D Format Support:**
-  - Standard 2D movies (using a shared single texture for optimal VRAM/GPU efficiency).
-  - 3D Half Side-by-Side (Half-SBS) with 2:1 squeeze aspect ratio correction.
+  - Standard 2D movies (shared single `VideoTexture` for minimal GPU upload overhead).
+  - 3D Half Side-by-Side (Half-SBS) with 2:1 anamorphic aspect correction.
   - 3D Full Side-by-Side (Full-SBS).
-  - 3D Half Over-Under (Half-OU) with 2:1 squeeze aspect ratio correction.
+  - 3D Half Over-Under (Half-OU) with 2:1 anamorphic aspect correction.
   - 3D Full Over-Under (Full-OU).
 - **Local Files & Online URL Streaming:**
-  - Load local video files (MP4 H.264/AAC, WebM) directly from your device with zero upload latency.
+  - Load local video files (MP4 H.264/AAC, WebM) directly from device storage.
   - Stream CORS-enabled online video URLs (`https://...`).
-  - One-click load for the built-in Oceans HD sample stream.
-- **Clean In-VR Navigation:** Switch rooms, toggle formats, adjust IPD, or tap `🚪 Exit VR` anytime to return to the movie selection launcher without reloading the page.
-- **Screen Wake-Lock:** Automatically keeps the mobile display awake and automatically re-acquires wake-lock on returning from background tabs.
-- **Mobile-Optimized Performance:** Lightweight Lambert shading, baked additive sconce lighting, zero per-frame CPU-to-GPU texture re-uploads in Three.js, and automatic render suspension while in the 2D launcher.
+  - Built-in Oceans HD sample stream with automatic MP4/WebM codec selection.
+- **Clean In-VR Navigation:** Switch rooms, toggle formats, adjust IPD, or click `🚪 Exit VR` anytime to return to the movie selection launcher without reloading.
+- **Screen Wake-Lock & Non-Blocking Entry:** Keeps the display awake while watching, re-acquires wake lock on `visibilitychange`, and enters VR immediately without stalling on WebView fullscreen/wake-lock promises.
+- **Mobile-Optimized Performance:** Lambert shading with baked sconce glow textures, no redundant per-frame `VideoTexture` uploads, paused 3D render loop behind the 2D launcher.
+
+---
+
+## 🌐 Hosting / Static Deployment (Recommended)
+
+Gyroscope (`DeviceOrientationEvent`), Screen Wake Lock, and Fullscreen APIs require a **trusted HTTPS origin** on phones. Because this app is 100% static after `npm run build`, deploying `dist/` to any static HTTPS host removes the need for local dev servers or bypassing self-signed certificates:
+
+- **GitHub Pages (included):** Enable **Settings ➔ Pages ➔ Source: GitHub Actions**; [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml) automatically builds and publishes `dist/` on every push to `main`.
+- **Cloudflare Pages / Netlify / Vercel:** Connect the repository with build command `npm run build` and publish directory `dist` (`vite.config.js` configures `base: './'` so assets resolve from any subpath or domain).
 
 ---
 
 ## 📱 Mobile Setup & Platform Notes
 
 ### Android (Chrome / Brave / Samsung Internet)
-1. Open the app URL over HTTPS.
-2. Allow orientation and sensor access when prompted.
-3. Tap **"Enter VR & Insert into JioDive"** — the app will request fullscreen and lock into landscape mode automatically.
+1. Open the hosted HTTPS URL (or local dev HTTPS URL).
+2. Allow motion/orientation sensor access if prompted.
+3. Tap **"Enter VR & Insert into JioDive"** — the app requests fullscreen and landscape orientation lock.
 
 ### iOS Safari (iPhone)
-Apple Safari does not support the HTML5 Fullscreen API for standard web pages. To experience edge-to-edge VR without Safari's top and bottom browser toolbars:
-1. Open the app in Safari.
-2. Tap the **Share** button (box with upward arrow).
-3. Select **"Add to Home Screen"** and tap **Add**.
-4. Launch **JioDive VR** directly from your iPhone home screen as a standalone Progressive Web App (PWA).
-5. When prompted, allow Motion & Orientation permissions (or enable in *iOS Settings > Safari > Motion & Orientation Access*).
+iOS Safari does not support the HTML5 Fullscreen API for regular web tabs. To watch edge-to-edge without Safari browser toolbars:
+1. Open the hosted HTTPS URL in Safari.
+2. Tap **Share** ➔ **"Add to Home Screen"** ➔ **Add**.
+3. Open **JioDive VR** from your Home Screen (`display: standalone` via PWA manifest).
+4. Allow **Motion & Orientation Access** when prompted (or under *iOS Settings > Safari*).
 
 ---
 
-## 🚀 How to Run & Test
+## 🚀 Local Development
 
-### 1. Start Dev Server
+Requires **Node.js 18+** (uses Vite `>= 6.1.0` with `--configLoader native`):
+
 ```bash
+npm install
 npm run dev
 ```
 
-Vite will serve the app with local SSL over HTTPS:
+Vite serves the app over local HTTPS using `@vitejs/plugin-basic-ssl`:
 ```
   ➜  Local:   https://localhost:5173/
   ➜  Network: https://192.168.1.x:5173/
 ```
 
-### 2. Open on Your Phone
-1. Connect your phone to the same Wi-Fi network as your computer.
-2. Open Chrome/Brave/Safari on your phone and navigate to the HTTPS network address.
-3. *(If using Vite's local development certificate, tap "Advanced" -> "Proceed to site")*.
-
-### 3. Insert Phone into JioDive
-1. Choose a local video file, enter an online streaming URL, or click the Oceans HD sample.
-2. Choose your initial format and environment.
-3. Tap **"Enter VR & Insert into JioDive"**.
-4. Slide your phone into the headset tray and lock the front latch.
+Open the Network URL on your phone over the same Wi-Fi network *(accept the local self-signed dev certificate if prompted)*.
 
 ---
 
@@ -84,6 +92,12 @@ Vite will serve the app with local SSL over HTTPS:
 | **Recenter Screen (Fix Drift)** | **Double-click** the physical button quickly (< 350ms). |
 | **Cycle IPD** | Click **👁 IPD** in the VR menu (58mm ➔ 64mm ➔ 68mm ➔ 72mm). |
 | **Cycle Format** | Click **🕶 Format** in the VR menu (2D ➔ Half-SBS ➔ Full-SBS ➔ Half-OU ➔ Full-OU). |
-| **Bed / Lay-Down Mode** | Click the **🛏 Bed Mode** button to tilt both the screen and menu to the ceiling. |
+| **Bed / Lay-Down Mode** | Click **🛏 Bed Mode** to tilt both screen and menu upward together. |
 | **Exit VR** | Click **🚪 Exit VR** or exit fullscreen to return to the movie selection launcher. |
+
+---
+
+## 📄 License
+
+This project is licensed under the MIT License — see the [LICENSE](LICENSE) file for details.
 
