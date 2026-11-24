@@ -11,23 +11,136 @@ const canvas = document.getElementById('vr-canvas');
 const video = document.getElementById('video-player');
 const launcher = document.getElementById('launcher');
 const btnEnterVr = document.getElementById('btn-enter-vr');
+
+// Source tabs & panels
+const sourceTabs = Array.from(document.querySelectorAll('.source-tab[role="tab"]'));
+const sourcePanels = Array.from(document.querySelectorAll('.source-panel[role="tabpanel"]'));
+const fileDropzone = document.getElementById('file-dropzone');
 const fileInput = document.getElementById('video-file-input');
 const btnLoadDemo = document.getElementById('btn-load-demo');
 const streamUrlInput = document.getElementById('stream-url-input');
 const btnLoadUrl = document.getElementById('btn-load-url');
 const fileInfo = document.getElementById('file-info');
+
+// Subtitle controls
 const subtitleFileInput = document.getElementById('subtitle-file-input');
+const subtitleChipLabel = document.getElementById('subtitle-chip-label');
+const subtitleBtnText = document.getElementById('subtitle-btn-text');
 const btnClearSubtitles = document.getElementById('btn-clear-subtitles');
 const subtitleInfo = document.getElementById('subtitle-info');
-const modeSelect = document.getElementById('mode-select');
-const envSelect = document.getElementById('env-select');
-const ipdSelect = document.getElementById('ipd-select');
-const fovSelect = document.getElementById('fov-select');
-const sizeSelect = document.getElementById('size-select');
-const swapEyesSelect = document.getElementById('swap-eyes-select');
-const distortionSelect = document.getElementById('distortion-select');
-const brightnessSelect = document.getElementById('brightness-select');
-const dwellSelect = document.getElementById('dwell-select');
+
+// Headset & Optics controls
+const swapEyesToggle = document.getElementById('swap-eyes-toggle');
+const distortionToggle = document.getElementById('distortion-toggle');
+const dwellToggle = document.getElementById('dwell-toggle');
+const opticsSummaryMeta = document.getElementById('optics-summary-meta');
+
+// Inline SVG status icons (avoids emojis and ensures non-color-only state cues)
+const STATUS_ICONS = {
+  ok: '<svg class="status-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>',
+  error: '<svg class="status-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>',
+  loading: '<svg class="status-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>'
+};
+
+let currentSourceLabel = '';
+let hasMkvWarning = false;
+
+function setBanner(el, state, message) {
+  if (!el) return;
+  if (!message) {
+    el.textContent = '';
+    el.className = 'status-banner hidden';
+    return;
+  }
+
+  let stateClass = 'status-banner';
+  let iconSvg = STATUS_ICONS.ok;
+  if (state === 'error') {
+    stateClass = 'status-banner is-error';
+    iconSvg = STATUS_ICONS.error;
+  } else if (state === 'loading') {
+    stateClass = 'status-banner is-loading';
+    iconSvg = STATUS_ICONS.loading;
+  }
+
+  el.className = stateClass;
+  el.innerHTML = `${iconSvg}<span></span>`;
+  el.querySelector('span').textContent = message;
+}
+
+// Accessible Tablist Management
+function selectSourceTab(targetTab, moveFocus = false) {
+  if (!targetTab) return;
+  const targetPanelId = targetTab.dataset.panel;
+
+  for (const tab of sourceTabs) {
+    const isSelected = tab === targetTab;
+    tab.setAttribute('aria-selected', String(isSelected));
+    tab.tabIndex = isSelected ? 0 : -1;
+  }
+
+  for (const panel of sourcePanels) {
+    if (panel.id === targetPanelId) {
+      panel.removeAttribute('hidden');
+    } else {
+      panel.setAttribute('hidden', 'until-found');
+    }
+  }
+
+  if (moveFocus) {
+    targetTab.focus();
+  }
+}
+
+sourceTabs.forEach((tab, idx) => {
+  tab.addEventListener('click', () => selectSourceTab(tab, false));
+  tab.addEventListener('keydown', (e) => {
+    let nextIdx = -1;
+    if (e.key === 'ArrowRight') nextIdx = (idx + 1) % sourceTabs.length;
+    else if (e.key === 'ArrowLeft') nextIdx = (idx - 1 + sourceTabs.length) % sourceTabs.length;
+    else if (e.key === 'Home') nextIdx = 0;
+    else if (e.key === 'End') nextIdx = sourceTabs.length - 1;
+
+    if (nextIdx !== -1) {
+      e.preventDefault();
+      selectSourceTab(sourceTabs[nextIdx], true);
+    }
+  });
+});
+
+// Sync active tab if browser Find-in-Page reveals a hidden="until-found" panel
+sourcePanels.forEach((panel) => {
+  panel.addEventListener('beforematch', () => {
+    const ownerTab = sourceTabs.find((t) => t.dataset.panel === panel.id);
+    if (ownerTab) selectSourceTab(ownerTab, false);
+  });
+});
+
+// Form Control Helpers (Radio pills + Switches)
+function getRadioValue(name, fallback) {
+  const checked = document.querySelector(`input[name="${name}"]:checked`);
+  return checked ? checked.value : fallback;
+}
+
+function setRadioValue(name, value) {
+  const inputs = document.querySelectorAll(`input[name="${name}"]`);
+  const targetStr = String(value);
+  for (const input of inputs) {
+    if (input.value === targetStr) {
+      input.checked = true;
+      return true;
+    }
+  }
+  return false;
+}
+
+function updateOpticsSummary() {
+  if (!opticsSummaryMeta) return;
+  const ipdMm = Math.round(parseFloat(getRadioValue('ipd', '0.062')) * 1000);
+  const fovDeg = getRadioValue('fov', '75');
+  const opticsState = distortionToggle && distortionToggle.checked ? 'Optics On' : 'Flat';
+  opticsSummaryMeta.textContent = `${ipdMm} mm · ${fovDeg}° · ${opticsState}`;
+}
 
 // Verified high-reliability sample video with full CORS support (VideoJS CDN)
 const DEMO_VIDEO_MP4 = 'https://vjs.zencdn.net/v/oceans.mp4';
@@ -44,14 +157,40 @@ function pickSupportedDemoUrl() {
 }
 
 function loadDemoVideo(showBanner = true) {
+  hasMkvWarning = false;
+  currentSourceLabel = 'Oceans HD (Sample)';
   video.crossOrigin = 'anonymous';
   video.src = pickSupportedDemoUrl();
   video.load();
   if (showBanner) {
-    fileInfo.className = 'file-info';
-    fileInfo.textContent = 'Loaded: Oceans HD (Online Sample)';
-    fileInfo.classList.remove('hidden');
+    setBanner(fileInfo, 'loading', `Connecting to ${currentSourceLabel}...`);
   }
+}
+
+function loadLocalVideoFile(file) {
+  if (!file) return;
+  const isMkv = file.name.toLowerCase().endsWith('.mkv');
+  hasMkvWarning = isMkv;
+  currentSourceLabel = `${file.name} (${(file.size / (1024 * 1024)).toFixed(1)} MB)`;
+
+  if (isMkv) {
+    setBanner(
+      fileInfo,
+      'error',
+      `Note on MKV: "${file.name}" is an MKV container. Browsers rarely decode MKV natively — convert to MP4 (H.264 + AAC) or WebM if playback fails.`
+    );
+  } else {
+    setBanner(fileInfo, 'ok', `Ready: ${currentSourceLabel}`);
+  }
+
+  if (video.src && video.src.startsWith('blob:')) {
+    URL.revokeObjectURL(video.src);
+  }
+
+  const url = URL.createObjectURL(file);
+  video.removeAttribute('crossorigin');
+  video.src = url;
+  video.load();
 }
 
 // Setup Three.js Scene & Renderer
@@ -75,84 +214,99 @@ const gazeUI = new GazeUI(rig, video, cinemaScreen, environments);
 
 let wakeLock = null;
 
-// Video Error Handling
+// Video Lifecycle & Error Handling
+video.addEventListener('loadedmetadata', () => {
+  if (!currentSourceLabel || hasMkvWarning) return;
+  const dims = video.videoWidth && video.videoHeight ? ` · ${video.videoWidth}×${video.videoHeight}` : '';
+  setBanner(fileInfo, 'ok', `Ready: ${currentSourceLabel}${dims}`);
+});
+
+video.addEventListener('canplay', () => {
+  if (hasMkvWarning && video.videoWidth > 0) {
+    hasMkvWarning = false;
+    setBanner(fileInfo, 'ok', `Ready: ${currentSourceLabel} · ${video.videoWidth}×${video.videoHeight}`);
+  }
+});
+
 video.addEventListener('error', () => {
   const err = video.error;
   let detail = 'The browser cannot decode or load this video file.';
   if (err) {
     if (err.code === MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED) {
-      detail = 'Format/codec not supported by browser. Note: Google Chrome does NOT support MKV containers, AC3/DTS audio, or certain HEVC profiles natively. If streaming an online URL, ensure the server permits CORS headers (Access-Control-Allow-Origin).';
+      detail =
+        'Format/codec not supported by browser. Chrome does not support MKV containers, AC3/DTS audio, or some HEVC profiles. For remote URLs, ensure the server allows CORS.';
     } else if (err.code === MediaError.MEDIA_ERR_DECODE) {
-      detail = 'Video decoding failed midway. The file might be corrupt or encoded with an unsupported profile.';
+      detail = 'Video decoding failed midway. The file may be corrupt or use an unsupported codec.';
     } else if (err.code === MediaError.MEDIA_ERR_NETWORK) {
-      detail = 'Network error while attempting to stream the video file. Check your internet connection or verify the stream URL.';
+      detail = 'Network error while streaming the video. Check your connection or stream URL.';
     }
   }
   console.error('Video element error:', err, detail);
-  fileInfo.className = 'file-info error';
-  fileInfo.textContent = `⚠️ Playback Error: ${detail}`;
-  fileInfo.classList.remove('hidden');
+  setBanner(fileInfo, 'error', `Playback Error: ${detail}`);
 });
 
-// File Picker (Item 7 Fix: safe DOM construction with textContent to prevent filename injection)
-fileInput.addEventListener('change', (e) => {
-  const file = e.target.files[0];
-  if (file) {
-    const isMkv = file.name.toLowerCase().endsWith('.mkv');
-    fileInfo.textContent = '';
+// Local File Picker & Drag-and-Drop
+if (fileInput) {
+  fileInput.addEventListener('change', (e) => {
+    const file = e.target.files?.[0];
+    if (file) loadLocalVideoFile(file);
+  });
+}
 
-    if (isMkv) {
-      fileInfo.className = 'file-info error';
-      fileInfo.textContent = `⚠️ Note on MKV: "${file.name}" is an MKV container. Browsers (Chrome/Safari) cannot natively decode MKV files. If the screen is black or silent, please convert it to MP4 (H.264 + AAC) or WebM.`;
-      fileInfo.classList.remove('hidden');
-    } else {
-      fileInfo.className = 'file-info';
-      fileInfo.textContent = `Loaded: ${file.name} (${(file.size / (1024 * 1024)).toFixed(1)} MB)`;
-      fileInfo.classList.remove('hidden');
-    }
+if (fileDropzone) {
+  fileDropzone.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    fileDropzone.classList.add('is-dragover');
+  });
+  fileDropzone.addEventListener('dragleave', () => {
+    fileDropzone.classList.remove('is-dragover');
+  });
+  fileDropzone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    fileDropzone.classList.remove('is-dragover');
+    const file = e.dataTransfer?.files?.[0];
+    if (file) loadLocalVideoFile(file);
+  });
+}
 
-    // Revoke previous blob URL if exists
-    if (video.src && video.src.startsWith('blob:')) {
-      URL.revokeObjectURL(video.src);
-    }
+// Demo Video
+if (btnLoadDemo) {
+  btnLoadDemo.addEventListener('click', () => {
+    loadDemoVideo(true);
+  });
+}
 
-    const url = URL.createObjectURL(file);
-    // Remove crossOrigin for local blobs to prevent origin issues
-    video.removeAttribute('crossorigin');
-    video.src = url;
-    video.load();
+// Online URL Streaming
+function triggerUrlLoad() {
+  const url = streamUrlInput ? streamUrlInput.value.trim() : '';
+  if (!url) {
+    setBanner(fileInfo, 'error', 'Please enter a valid HTTPS video stream URL.');
+    streamUrlInput?.focus();
+    return;
   }
-});
 
-// Demo Video (Item 6 Fix: verified CORS video with MP4/WebM codec detection)
-btnLoadDemo.addEventListener('click', () => {
-  loadDemoVideo(true);
-});
+  hasMkvWarning = false;
+  currentSourceLabel = url;
+  video.crossOrigin = 'anonymous';
+  video.src = url;
+  video.load();
+  setBanner(fileInfo, 'loading', `Connecting to stream: ${url}`);
+}
 
-// Online URL Streaming (Item 5 Fix)
 if (btnLoadUrl && streamUrlInput) {
-  btnLoadUrl.addEventListener('click', () => {
-    const url = streamUrlInput.value.trim();
-    if (!url) {
-      fileInfo.className = 'file-info error';
-      fileInfo.textContent = 'Please enter a valid video stream URL.';
-      fileInfo.classList.remove('hidden');
-      return;
+  btnLoadUrl.addEventListener('click', triggerUrlLoad);
+  streamUrlInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.isComposing) {
+      e.preventDefault();
+      triggerUrlLoad();
     }
-
-    video.crossOrigin = 'anonymous';
-    video.src = url;
-    video.load();
-    fileInfo.className = 'file-info';
-    fileInfo.textContent = `Streaming URL: ${url}`;
-    fileInfo.classList.remove('hidden');
   });
 }
 
 // Subtitle File Loader (.srt / .vtt)
 if (subtitleFileInput && subtitleInfo) {
   subtitleFileInput.addEventListener('change', async (e) => {
-    const file = e.target.files[0];
+    const file = e.target.files?.[0];
     if (!file) return;
 
     try {
@@ -160,22 +314,20 @@ if (subtitleFileInput && subtitleInfo) {
       const cues = parseSubtitles(text);
       if (cues.length === 0) {
         cinemaScreen.setSubtitles([]);
-        subtitleInfo.className = 'file-info error';
-        subtitleInfo.textContent = `⚠️ No valid cues found in "${file.name}". Ensure it is a valid .srt or .vtt file.`;
-        subtitleInfo.classList.remove('hidden');
-        if (btnClearSubtitles) btnClearSubtitles.classList.add('hidden');
+        setBanner(subtitleInfo, 'error', `No valid cues found in "${file.name}". Ensure it is a valid .srt or .vtt file.`);
+        btnClearSubtitles?.classList.add('hidden');
+        subtitleChipLabel?.classList.remove('is-active');
+        if (subtitleBtnText) subtitleBtnText.textContent = 'Add Subtitles';
         return;
       }
 
       cinemaScreen.setSubtitles(cues);
-      subtitleInfo.className = 'file-info';
-      subtitleInfo.textContent = `Loaded Subtitles: ${file.name} (${cues.length} lines)`;
-      subtitleInfo.classList.remove('hidden');
-      if (btnClearSubtitles) btnClearSubtitles.classList.remove('hidden');
+      setBanner(subtitleInfo, 'ok', `Subtitles: ${file.name} (${cues.length} lines)`);
+      btnClearSubtitles?.classList.remove('hidden');
+      subtitleChipLabel?.classList.add('is-active');
+      if (subtitleBtnText) subtitleBtnText.textContent = `${cues.length} Cues`;
     } catch (err) {
-      subtitleInfo.className = 'file-info error';
-      subtitleInfo.textContent = `⚠️ Could not read subtitle file: ${err.message}`;
-      subtitleInfo.classList.remove('hidden');
+      setBanner(subtitleInfo, 'error', `Could not read subtitle file: ${err.message}`);
     }
   });
 }
@@ -184,38 +336,51 @@ if (btnClearSubtitles) {
   btnClearSubtitles.addEventListener('click', () => {
     cinemaScreen.setSubtitles([]);
     if (subtitleFileInput) subtitleFileInput.value = '';
-    if (subtitleInfo) {
-      subtitleInfo.textContent = '';
-      subtitleInfo.classList.add('hidden');
-    }
+    setBanner(subtitleInfo, 'ok', '');
     btnClearSubtitles.classList.add('hidden');
+    subtitleChipLabel?.classList.remove('is-active');
+    if (subtitleBtnText) subtitleBtnText.textContent = 'Add Subtitles';
   });
 }
 
-// Persistent Headset & Viewing Preferences (IPD, FOV, Screen Size)
+// Persistent Headset & Viewing Preferences
 const PREFS_KEY = 'jiodive_prefs';
-
-function restoreSelectOption(selectEl, value, onApply) {
-  if (selectEl && value && Array.from(selectEl.options).some((o) => o.value === String(value))) {
-    selectEl.value = String(value);
-    onApply(selectEl.value);
-  }
-}
 
 function loadSavedPreferences() {
   try {
     const raw = localStorage.getItem(PREFS_KEY);
-    if (!raw) return;
+    if (!raw) {
+      updateOpticsSummary();
+      return;
+    }
     const prefs = JSON.parse(raw);
-    restoreSelectOption(ipdSelect, prefs.ipd, (v) => rig.setIPD(parseFloat(v)));
-    restoreSelectOption(fovSelect, prefs.fov, (v) => rig.setFOV(parseFloat(v)));
-    restoreSelectOption(sizeSelect, prefs.screenSize, (v) => cinemaScreen.setScreenPreset(v));
-    restoreSelectOption(distortionSelect, prefs.distortion, (v) => rig.setDistortion(v === 'jiodive'));
-    restoreSelectOption(brightnessSelect, prefs.brightness, (v) => gazeUI.setBrightness(parseFloat(v)));
-    restoreSelectOption(dwellSelect, prefs.dwell, (v) => gazeUI.setGazeDwell(v !== 'off'));
+
+    if (prefs.ipd && setRadioValue('ipd', prefs.ipd)) {
+      rig.setIPD(parseFloat(prefs.ipd));
+    }
+    if (prefs.fov && setRadioValue('fov', prefs.fov)) {
+      rig.setFOV(parseFloat(prefs.fov));
+    }
+    if (prefs.screenSize && setRadioValue('screenSize', prefs.screenSize)) {
+      cinemaScreen.setScreenPreset(prefs.screenSize);
+    }
+    if (prefs.distortion && distortionToggle) {
+      const enabled = prefs.distortion === 'jiodive';
+      distortionToggle.checked = enabled;
+      rig.setDistortion(enabled);
+    }
+    if (prefs.brightness && setRadioValue('brightness', prefs.brightness)) {
+      gazeUI.setBrightness(parseFloat(prefs.brightness));
+    }
+    if (prefs.dwell && dwellToggle) {
+      const enabled = prefs.dwell !== 'off';
+      dwellToggle.checked = enabled;
+      gazeUI.setGazeDwell(enabled);
+    }
   } catch {
     // Ignore storage access errors in restricted modes
   }
+  updateOpticsSummary();
 }
 
 function savePreferences() {
@@ -223,22 +388,81 @@ function savePreferences() {
     localStorage.setItem(
       PREFS_KEY,
       JSON.stringify({
-        ipd: ipdSelect ? ipdSelect.value : '0.062',
-        fov: fovSelect ? fovSelect.value : '75',
-        screenSize: sizeSelect ? sizeSelect.value : 'standard',
-        distortion: distortionSelect ? distortionSelect.value : 'jiodive',
-        brightness: brightnessSelect ? brightnessSelect.value : '1',
-        dwell: dwellSelect ? dwellSelect.value : 'off'
+        ipd: getRadioValue('ipd', '0.062'),
+        fov: getRadioValue('fov', '75'),
+        screenSize: getRadioValue('screenSize', 'standard'),
+        distortion: distortionToggle && distortionToggle.checked ? 'jiodive' : 'off',
+        brightness: getRadioValue('brightness', '1'),
+        dwell: dwellToggle && dwellToggle.checked ? '1200' : 'off'
       })
     );
   } catch {
     // Ignore storage errors
   }
+  updateOpticsSummary();
 }
 
 loadSavedPreferences();
-[ipdSelect, fovSelect, sizeSelect, distortionSelect, brightnessSelect, dwellSelect].forEach((el) => {
-  if (el) el.addEventListener('change', savePreferences);
+
+// Save & apply immediately on form control updates
+document.querySelectorAll('input[name="ipd"]').forEach((el) => {
+  el.addEventListener('change', () => {
+    rig.setIPD(parseFloat(el.value));
+    savePreferences();
+  });
+});
+
+document.querySelectorAll('input[name="fov"]').forEach((el) => {
+  el.addEventListener('change', () => {
+    rig.setFOV(parseFloat(el.value));
+    savePreferences();
+  });
+});
+
+document.querySelectorAll('input[name="screenSize"]').forEach((el) => {
+  el.addEventListener('change', () => {
+    cinemaScreen.setScreenPreset(el.value);
+    savePreferences();
+  });
+});
+
+document.querySelectorAll('input[name="brightness"]').forEach((el) => {
+  el.addEventListener('change', () => {
+    gazeUI.setBrightness(parseFloat(el.value));
+    savePreferences();
+  });
+});
+
+if (distortionToggle) {
+  distortionToggle.addEventListener('change', () => {
+    rig.setDistortion(distortionToggle.checked);
+    savePreferences();
+  });
+}
+
+if (dwellToggle) {
+  dwellToggle.addEventListener('change', () => {
+    gazeUI.setGazeDwell(dwellToggle.checked);
+    savePreferences();
+  });
+}
+
+// Keep 2D launcher controls & saved prefs synced when settings change inside VR
+window.addEventListener('jiodive:sync', (e) => {
+  const { key, value } = e.detail || {};
+  if (!key) return;
+
+  if (key === 'mode' || key === 'env' || key === 'screenSize' || key === 'ipd' || key === 'fov' || key === 'brightness') {
+    setRadioValue(key, value);
+  } else if (key === 'distortion' && distortionToggle) {
+    distortionToggle.checked = value === 'jiodive';
+  } else if (key === 'swapEyes' && swapEyesToggle) {
+    swapEyesToggle.checked = value === 'swapped';
+  } else if (key === 'dwell' && dwellToggle) {
+    dwellToggle.checked = value !== 'off';
+  }
+
+  savePreferences();
 });
 
 // Screen Wake Lock
@@ -269,7 +493,6 @@ async function releaseWakeLock() {
   }
 }
 
-// Re-request wake lock when returning from background
 document.addEventListener('visibilitychange', async () => {
   if (document.visibilityState === 'visible' && rig.isVrActive) {
     await requestWakeLock();
@@ -280,7 +503,7 @@ document.addEventListener('visibilitychange', async () => {
 
 window.addEventListener('pagehide', releaseWakeLock);
 
-// Handle Fullscreen exit (Item 3 Fix: auto exit VR only when leaving an active fullscreen session)
+// Handle Fullscreen exit cleanly
 let isFullscreenActive = false;
 document.addEventListener('fullscreenchange', () => {
   if (document.fullscreenElement) {
@@ -293,12 +516,11 @@ document.addEventListener('fullscreenchange', () => {
 
 // Enter VR
 btnEnterVr.addEventListener('click', () => {
-  // If no video loaded, load demo automatically
   if (!video.src) {
     loadDemoVideo(false);
   }
 
-  // CRITICAL: Trigger playback SYNCHRONOUSLY directly inside the user click event!
+  // CRITICAL: Trigger playback SYNCHRONOUSLY inside user click event
   let playPromise = null;
   try {
     playPromise = video.play();
@@ -327,7 +549,6 @@ btnEnterVr.addEventListener('click', () => {
   });
 
   // Trigger Fullscreen, orientation lock, and Wake Lock non-blocking
-  // (embedded WebViews and iOS Safari may leave fullscreen/wakelock Promises pending or unsupported)
   if (document.documentElement.requestFullscreen) {
     try {
       document.documentElement.requestFullscreen()
@@ -348,33 +569,27 @@ btnEnterVr.addEventListener('click', () => {
 
   requestWakeLock().catch(() => {});
 
-  // Apply selected settings (Eye Swap, Format, Screen Size, Environment, IPD, FOV, Optics, Dwell)
-  cinemaScreen.setSwapEyes(Boolean(swapEyesSelect && swapEyesSelect.value === 'swapped'));
-  cinemaScreen.setFormat(modeSelect.value);
-  if (sizeSelect) {
-    cinemaScreen.setScreenPreset(sizeSelect.value);
-  }
-  environments.setEnvironment(envSelect.value, cinemaScreen, gazeUI);
+  // Apply selected settings
+  cinemaScreen.setSwapEyes(Boolean(swapEyesToggle && swapEyesToggle.checked));
+  cinemaScreen.setFormat(getRadioValue('mode', '2d'));
+  cinemaScreen.setScreenPreset(getRadioValue('screenSize', 'standard'));
+  environments.setEnvironment(getRadioValue('env', 'cinema'), cinemaScreen, gazeUI);
 
-  if (ipdSelect) {
-    rig.setIPD(parseFloat(ipdSelect.value));
-  }
-  if (fovSelect) {
-    rig.setFOV(parseFloat(fovSelect.value));
-  }
-  if (distortionSelect) {
-    rig.setDistortion(distortionSelect.value === 'jiodive');
-  }
-  if (dwellSelect) {
-    gazeUI.setGazeDwell(dwellSelect.value !== 'off');
+  rig.setIPD(parseFloat(getRadioValue('ipd', '0.062')));
+  rig.setFOV(parseFloat(getRadioValue('fov', '75')));
+  rig.setDistortion(Boolean(distortionToggle ? distortionToggle.checked : true));
+  gazeUI.setGazeDwell(Boolean(dwellToggle && dwellToggle.checked));
+
+  // Reset VR remote to main playback bar on entry
+  if (gazeUI.setSettingsOpen) {
+    gazeUI.setSettingsOpen(false);
   }
 
   // Hide 2D launcher & enter VR immediately
+  launcher.inert = true;
   launcher.classList.add('hidden');
   rig.isVrActive = true;
-  if (brightnessSelect) {
-    gazeUI.setBrightness(parseFloat(brightnessSelect.value));
-  }
+  gazeUI.setBrightness(parseFloat(getRadioValue('brightness', '1')));
   rig.recenter();
 });
 
@@ -382,17 +597,13 @@ btnEnterVr.addEventListener('click', () => {
 function animate(time) {
   requestAnimationFrame(animate);
 
-  // Skip 100% of 3D rendering while 2D launcher is visible
   if (!rig.isVrActive) {
     return;
   }
 
-  // Update VR modules
   rig.update();
   ambient.update(time);
   gazeUI.update();
-
-  // Render Left & Right eye viewports
   rig.render();
 }
 

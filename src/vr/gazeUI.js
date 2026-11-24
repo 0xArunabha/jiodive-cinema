@@ -2,11 +2,11 @@ import * as THREE from 'three';
 import { SCREEN_PRESETS } from './screenMesh.js';
 
 /**
- * In-VR Floating Gaze & Physical Click UI
- * Optimized for JioDive conductive physical button:
- * - Single Click: Selects aimed button OR starts video / toggles menu visibility (debounced)
- * - Double Click: Instantly recenters VR view without side-effects
- * - Bed Mode: Automatically tilts menu upward with screen
+ * In-VR Floating Gaze & Physical Click Theater Remote
+ * Two clean modes to prevent clutter while watching:
+ * 1. Main Theater Bar: Seek bar, time, CC, prominent Play/Pause, -10s/+10s, Mute, Room, Seat, Recenter, Settings, Exit
+ * 2. Settings Sub-Panel: Format, Eye Swap, Bed Mode, Comfort Dimmer, IPD, FOV, Lens Optics, Gaze Dwell
+ * All icons are drawn as crisp 2x HiDPI vector paths (zero OS emojis).
  */
 export class GazeUI {
   constructor(stereoRig, videoElement, cinemaScreen, environments) {
@@ -15,7 +15,10 @@ export class GazeUI {
     this.screen = cinemaScreen;
     this.environments = environments;
 
-    this.interactiveObjects = [];
+    this.mainInteractiveObjects = [];
+    this.settingsInteractiveObjects = [];
+    this.isSettingsOpen = false;
+
     this.hoveredObject = null;
     this.hoverSeekRatio = null;
     this.raycaster = new THREE.Raycaster();
@@ -45,22 +48,16 @@ export class GazeUI {
     this.lastClickTime = 0;
     this.clickTimeout = null;
 
-    // Reticle + Dwell Progress Ring
     this.createReticle();
-
-    // Floating 3D Menu Panel
     this.createControlPanel();
-
-    // Physical Button, Keyboard & Pointer Listeners
     this.initClickListeners();
   }
 
   createReticle() {
-    // Reticle dot fixed at center of view
     const geom = new THREE.RingGeometry(0.008, 0.016, 24);
     const mat = new THREE.MeshBasicMaterial({
       color: 0xffffff,
-      opacity: 0.85,
+      opacity: 0.88,
       transparent: true,
       depthTest: false
     });
@@ -120,202 +117,881 @@ export class GazeUI {
     return { canvas, ctx, texture, logicalW, logicalH };
   }
 
+  roundedRectPath(ctx, x, y, w, h, r) {
+    ctx.beginPath();
+    if (ctx.roundRect) {
+      ctx.roundRect(x, y, w, h, r);
+    } else {
+      ctx.rect(x, y, w, h);
+    }
+  }
+
+  createBackdropMesh(isSettingsPanel = false) {
+    const bgUi = this.createUiTexture(776, 224);
+    const { ctx, logicalW: w, logicalH: h } = bgUi;
+
+    // Deep solid cinema glass prevents stage LED bleed-through (alphaTest clips rounded corners cleanly)
+    this.roundedRectPath(ctx, 3, 3, w - 6, h - 6, 22);
+    ctx.fillStyle = '#090b16';
+    ctx.fill();
+
+    ctx.strokeStyle = 'rgba(148, 163, 184, 0.28)';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    // Subtle top specular hairline highlight
+    const topGlow = ctx.createLinearGradient(80, 0, w - 80, 0);
+    topGlow.addColorStop(0, 'rgba(56, 189, 248, 0)');
+    topGlow.addColorStop(0.5, 'rgba(147, 197, 253, 0.45)');
+    topGlow.addColorStop(1, 'rgba(99, 102, 241, 0)');
+    ctx.strokeStyle = topGlow;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(60, 4);
+    ctx.lineTo(w - 60, 4);
+    ctx.stroke();
+
+    if (isSettingsPanel) {
+      // Header bar inside Settings sub-panel
+      ctx.fillStyle = '#141930';
+      this.roundedRectPath(ctx, 16, 14, w - 32, 46, 12);
+      ctx.fill();
+
+      this.drawIcon(ctx, 'settings', 42, 37, 20, '#38bdf8');
+      ctx.fillStyle = '#f8fafc';
+      ctx.font = 'bold 21px -apple-system, BlinkMacSystemFont, sans-serif';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      const titleText = 'Headset & Cinema Settings';
+      ctx.fillText(titleText, 64, 37);
+
+      const titleEnd = 64 + ctx.measureText(titleText).width;
+      ctx.fillStyle = '#94a3b8';
+      ctx.font = '500 14px -apple-system, BlinkMacSystemFont, sans-serif';
+      ctx.fillText('Live VR controls', titleEnd + 16, 38);
+    }
+
+    const bgGeom = new THREE.PlaneGeometry(3.88, 1.12);
+    const bgMat = new THREE.MeshBasicMaterial({
+      map: bgUi.texture,
+      transparent: false,
+      alphaTest: 0.5,
+      depthWrite: true,
+      side: THREE.DoubleSide
+    });
+    const mesh = new THREE.Mesh(bgGeom, bgMat);
+    mesh.renderOrder = 4;
+    return mesh;
+  }
+
   createControlPanel() {
     this.menuGroup = new THREE.Group();
-    // Position floating panel cleanly above floor and below IMAX screen edge, closer for sharp legibility
     this.menuGroup.position.set(0, 0.49, -3.6);
     this.menuGroup.rotation.x = -0.2;
     this.menuGroup.scale.set(0.58, 0.58, 0.58);
     this.rig.scene.add(this.menuGroup);
 
-    // Rounded high-opacity glass backdrop so distant stage LED lines never bleed through the menu
-    const bgUi = this.createUiTexture(792, 256);
-    const { ctx: bgCtx, logicalW: bw, logicalH: bh } = bgUi;
-    bgCtx.fillStyle = 'rgba(11, 13, 24, 0.98)';
-    bgCtx.beginPath();
-    if (bgCtx.roundRect) {
-      bgCtx.roundRect(3, 3, bw - 6, bh - 6, 22);
-    } else {
-      bgCtx.rect(3, 3, bw - 6, bh - 6);
-    }
-    bgCtx.fill();
-    bgCtx.strokeStyle = 'rgba(79, 70, 229, 0.45)';
-    bgCtx.lineWidth = 3;
-    bgCtx.stroke();
+    // 1. Main Theater Remote Group
+    this.mainGroup = new THREE.Group();
+    this.menuGroup.add(this.mainGroup);
+    this.mainGroup.add(this.createBackdropMesh(false));
 
-    const bgGeom = new THREE.PlaneGeometry(3.96, 1.28);
-    const bgMat = new THREE.MeshBasicMaterial({
-      map: bgUi.texture,
-      transparent: true,
-      alphaTest: 0.05,
-      depthWrite: true,
-      side: THREE.DoubleSide
-    });
-    const bg = new THREE.Mesh(bgGeom, bgMat);
-    this.menuGroup.add(bg);
+    // Top Strip (y = 0.34): Interactive Seek Bar + Time + CC Toggle
+    this.createSeekBarRow(0.34, this.mainGroup, this.mainInteractiveObjects);
 
-    // Top Row (y = 0.46): Interactive Seek Bar + Time Readout + CC Toggle
-    this.createSeekBarRow(0.46);
-
-    const ipdMm = Math.round(this.rig.ipd * 1000);
-    const buttons = [
-      // Row 1 (y = 0.17) - Playback, Scene & Screen Size
-      { label: '⏪ -10s', x: -1.55, y: 0.17, action: () => this.seek(-10) },
-      { label: '▶ Play', x: -0.93, y: 0.17, action: () => this.togglePlay(), ref: 'playBtnMesh' },
-      { label: '⏩ +10s', x: -0.31, y: 0.17, action: () => this.seek(10) },
-      { label: '🏛 Room', x: 0.31, y: 0.17, action: () => this.cycleEnvironment() },
-      { label: '📐 Standard', x: 0.93, y: 0.17, action: () => this.cycleScreenPreset(), ref: 'sizeBtnMesh' },
-      { label: '🎯 Recenter', x: 1.55, y: 0.17, action: () => this.rig.recenter() },
-      // Row 2 (y = -0.13) - Audio, 3D Format, Eye Swap, IPD, Bed & Exit
-      { label: '🔊 Sound', x: -1.55, y: -0.13, action: () => this.toggleAudio(), ref: 'audioBtnMesh' },
-      { label: '🕶 2D', x: -0.93, y: -0.13, action: () => this.cycleFormat(), ref: 'formatBtnMesh' },
-      { label: '🔀 L/R', x: -0.31, y: -0.13, action: () => this.toggleSwapEyes(), ref: 'swapBtnMesh' },
-      { label: `👁 ${ipdMm}mm`, x: 0.31, y: -0.13, action: () => this.cycleIPD(), ref: 'ipdBtnMesh' },
-      { label: '🛏 Bed', x: 0.93, y: -0.13, action: () => this.toggleBedMode() },
-      { label: '🚪 Exit', x: 1.55, y: -0.13, action: () => this.exitVR() }
-    ];
-
-    buttons.forEach((b) => {
-      const btnMesh = this.createButtonMesh(b.label, b.x, b.y, b.action, {
-        width: 0.56,
-        height: 0.2,
-        fontSize: 23
-      });
-      this.menuGroup.add(btnMesh);
-      this.interactiveObjects.push(btnMesh);
-      if (b.ref) {
-        this[b.ref] = btnMesh;
+    // Row 1 (y = 0.04): Primary Playback Transport + Audio
+    const playbackButtons = [
+      {
+        icon: 'rewind',
+        label: '-10s',
+        x: -1.46,
+        y: 0.04,
+        w: 0.68,
+        h: 0.23,
+        canvasW: 220,
+        canvasH: 88,
+        variant: 'glass',
+        action: () => this.seek(-10)
+      },
+      {
+        icon: 'play',
+        label: 'Play',
+        x: -0.39,
+        y: 0.04,
+        w: 1.30,
+        h: 0.24,
+        canvasW: 360,
+        canvasH: 92,
+        fontSize: 25,
+        variant: 'primary',
+        ref: 'playBtnMesh',
+        action: () => this.togglePlay()
+      },
+      {
+        icon: 'forward',
+        label: '+10s',
+        x: 0.68,
+        y: 0.04,
+        w: 0.68,
+        h: 0.23,
+        canvasW: 220,
+        canvasH: 88,
+        variant: 'glass',
+        action: () => this.seek(10)
+      },
+      {
+        icon: 'sound',
+        label: 'Audio',
+        x: 1.46,
+        y: 0.04,
+        w: 0.68,
+        h: 0.23,
+        canvasW: 220,
+        canvasH: 88,
+        variant: 'glass',
+        ref: 'audioBtnMesh',
+        action: () => this.toggleAudio()
       }
-    });
-
-    // Row 3 Utility Strip (y = -0.44) - Optics Distortion, Brightness Dimmer, Gaze Dwell, FOV
-    const utilityButtons = [
-      { label: '🔍 Lens On', x: -1.41, y: -0.44, action: () => this.toggleDistortion(), ref: 'lensBtnMesh' },
-      { label: '☀ 100%', x: -0.47, y: -0.44, action: () => this.cycleBrightness(), ref: 'brightBtnMesh' },
-      { label: '⌛ Dwell Off', x: 0.47, y: -0.44, action: () => this.toggleGazeDwell(), ref: 'dwellBtnMesh' },
-      { label: `🔭 FOV ${Math.round(this.rig.fov)}°`, x: 1.41, y: -0.44, action: () => this.cycleFOV(), ref: 'fovBtnMesh' }
     ];
 
-    utilityButtons.forEach((b) => {
-      const btnMesh = this.createButtonMesh(b.label, b.x, b.y, b.action, {
-        width: 0.86,
-        height: 0.16,
-        canvasW: 320,
+    playbackButtons.forEach((b) => this.addButtonToGroup(b, this.mainGroup, this.mainInteractiveObjects));
+
+    // Row 2 (y = -0.32): Theater, Screen Size, Recenter, Settings, Exit
+    const theaterButtons = [
+      {
+        icon: 'room',
+        label: 'Cinema',
+        x: -1.472,
+        y: -0.32,
+        w: 0.66,
+        h: 0.20,
+        canvasW: 216,
+        canvasH: 76,
+        fontSize: 21,
+        variant: 'subtle',
+        ref: 'roomBtnMesh',
+        action: () => this.cycleEnvironment()
+      },
+      {
+        icon: 'seat',
+        label: SCREEN_PRESETS[this.screen?.screenPreset]?.label || 'Standard',
+        x: -0.736,
+        y: -0.32,
+        w: 0.66,
+        h: 0.20,
+        canvasW: 216,
+        canvasH: 76,
+        fontSize: 21,
+        variant: 'subtle',
+        ref: 'sizeBtnMesh',
+        action: () => this.cycleScreenPreset()
+      },
+      {
+        icon: 'recenter',
+        label: 'Recenter',
+        x: 0,
+        y: -0.32,
+        w: 0.66,
+        h: 0.20,
+        canvasW: 216,
+        canvasH: 76,
+        fontSize: 21,
+        variant: 'subtle',
+        action: () => this.rig.recenter()
+      },
+      {
+        icon: 'settings',
+        label: 'Settings',
+        x: 0.736,
+        y: -0.32,
+        w: 0.66,
+        h: 0.20,
+        canvasW: 216,
+        canvasH: 76,
+        fontSize: 21,
+        variant: 'accent',
+        action: () => this.setSettingsOpen(true)
+      },
+      {
+        icon: 'exit',
+        label: 'Exit',
+        x: 1.472,
+        y: -0.32,
+        w: 0.66,
+        h: 0.20,
+        canvasW: 216,
+        canvasH: 76,
+        fontSize: 21,
+        variant: 'danger',
+        action: () => this.exitVR()
+      }
+    ];
+
+    theaterButtons.forEach((b) => this.addButtonToGroup(b, this.mainGroup, this.mainInteractiveObjects));
+
+    // 2. Settings Sub-Panel Group (hidden until Gear is clicked)
+    this.settingsGroup = new THREE.Group();
+    this.settingsGroup.visible = false;
+    this.menuGroup.add(this.settingsGroup);
+    this.settingsGroup.add(this.createBackdropMesh(true));
+
+    // Settings Header Right Action: < Back
+    this.addButtonToGroup(
+      {
+        icon: 'back',
+        label: 'Back',
+        x: 1.46,
+        y: 0.35,
+        w: 0.68,
+        h: 0.16,
+        canvasW: 216,
         canvasH: 64,
-        fontSize: 24
-      });
-      this.menuGroup.add(btnMesh);
-      this.interactiveObjects.push(btnMesh);
-      this[b.ref] = btnMesh;
-    });
+        fontSize: 21,
+        variant: 'accent',
+        action: () => this.setSettingsOpen(false)
+      },
+      this.settingsGroup,
+      this.settingsInteractiveObjects
+    );
+
+    // Settings Row 1 (y = 0.03): 3D Format, Eye Swap, Bed Mode, Dimmer
+    const settingsRow1 = [
+      {
+        icon: 'format3d',
+        label: '2D Mode',
+        x: -1.38,
+        y: 0.03,
+        w: 0.84,
+        h: 0.22,
+        canvasW: 268,
+        canvasH: 82,
+        fontSize: 21,
+        variant: 'glass',
+        ref: 'formatBtnMesh',
+        action: () => this.cycleFormat()
+      },
+      {
+        icon: 'swap',
+        label: 'Eyes L/R',
+        x: -0.46,
+        y: 0.03,
+        w: 0.84,
+        h: 0.22,
+        canvasW: 268,
+        canvasH: 82,
+        fontSize: 21,
+        variant: 'glass',
+        ref: 'swapBtnMesh',
+        action: () => this.toggleSwapEyes()
+      },
+      {
+        icon: 'bed',
+        label: 'Bed Off',
+        x: 0.46,
+        y: 0.03,
+        w: 0.84,
+        h: 0.22,
+        canvasW: 268,
+        canvasH: 82,
+        fontSize: 21,
+        variant: 'glass',
+        ref: 'bedBtnMesh',
+        action: () => this.toggleBedMode()
+      },
+      {
+        icon: 'brightness',
+        label: '100% Bright',
+        x: 1.38,
+        y: 0.03,
+        w: 0.84,
+        h: 0.22,
+        canvasW: 268,
+        canvasH: 82,
+        fontSize: 21,
+        variant: 'glass',
+        ref: 'brightBtnMesh',
+        action: () => this.cycleBrightness()
+      }
+    ];
+
+    settingsRow1.forEach((b) => this.addButtonToGroup(b, this.settingsGroup, this.settingsInteractiveObjects));
+
+    // Settings Row 2 (y = -0.31): IPD, FOV, Lens Correction, Gaze Dwell
+    const ipdMm = Math.round(this.rig.ipd * 1000);
+    const settingsRow2 = [
+      {
+        icon: 'ipd',
+        label: `IPD ${ipdMm}mm`,
+        x: -1.38,
+        y: -0.31,
+        w: 0.84,
+        h: 0.22,
+        canvasW: 268,
+        canvasH: 82,
+        fontSize: 21,
+        variant: 'glass',
+        ref: 'ipdBtnMesh',
+        action: () => this.cycleIPD()
+      },
+      {
+        icon: 'fov',
+        label: `FOV ${Math.round(this.rig.fov)}°`,
+        x: -0.46,
+        y: -0.31,
+        w: 0.84,
+        h: 0.22,
+        canvasW: 268,
+        canvasH: 82,
+        fontSize: 21,
+        variant: 'glass',
+        ref: 'fovBtnMesh',
+        action: () => this.cycleFOV()
+      },
+      {
+        icon: 'lens',
+        label: 'Lens On',
+        x: 0.46,
+        y: -0.31,
+        w: 0.84,
+        h: 0.22,
+        canvasW: 268,
+        canvasH: 82,
+        fontSize: 21,
+        variant: 'glass',
+        active: true,
+        ref: 'lensBtnMesh',
+        action: () => this.toggleDistortion()
+      },
+      {
+        icon: 'dwell',
+        label: 'Dwell Off',
+        x: 1.38,
+        y: -0.31,
+        w: 0.84,
+        h: 0.22,
+        canvasW: 268,
+        canvasH: 82,
+        fontSize: 21,
+        variant: 'glass',
+        ref: 'dwellBtnMesh',
+        action: () => this.toggleGazeDwell()
+      }
+    ];
+
+    settingsRow2.forEach((b) => this.addButtonToGroup(b, this.settingsGroup, this.settingsInteractiveObjects));
   }
 
-  createSeekBarRow(rowY = 0.46) {
-    // 1. Seek Track (interactive UV horizontal scrub, 2x HiDPI)
-    const seekUi = this.createUiTexture(512, 48);
-    const seekGeom = new THREE.PlaneGeometry(2.34, 0.14);
-    const seekMat = new THREE.MeshBasicMaterial({ map: seekUi.texture, transparent: true, side: THREE.DoubleSide });
+  addButtonToGroup(cfg, targetGroup, rayList) {
+    const btnMesh = this.createButtonMesh(cfg);
+    targetGroup.add(btnMesh);
+    rayList.push(btnMesh);
+    if (cfg.ref) {
+      this[cfg.ref] = btnMesh;
+    }
+    return btnMesh;
+  }
+
+  createSeekBarRow(rowY, targetGroup, rayList) {
+    const seekUi = this.createUiTexture(540, 52);
+    const seekGeom = new THREE.PlaneGeometry(2.38, 0.14);
+    const seekMat = new THREE.MeshBasicMaterial({
+      map: seekUi.texture,
+      transparent: true,
+      depthWrite: false,
+      side: THREE.DoubleSide
+    });
     this.seekBarMesh = new THREE.Mesh(seekGeom, seekMat);
-    this.seekBarMesh.position.set(-0.66, rowY, 0.02);
+    this.seekBarMesh.position.set(-0.61, rowY, 0.02);
+    this.seekBarMesh.renderOrder = 6;
     this.seekBarMesh.userData = {
       isSeekBar: true,
       noHoverScale: true,
       ...seekUi
     };
-    this.menuGroup.add(this.seekBarMesh);
-    this.interactiveObjects.push(this.seekBarMesh);
+    targetGroup.add(this.seekBarMesh);
+    rayList.push(this.seekBarMesh);
 
-    // 2. Time Display Readout (2x HiDPI)
-    const timeUi = this.createUiTexture(256, 48);
-    const timeGeom = new THREE.PlaneGeometry(0.74, 0.14);
-    const timeMat = new THREE.MeshBasicMaterial({ map: timeUi.texture, transparent: true, side: THREE.DoubleSide });
-    this.timeMesh = new THREE.Mesh(timeGeom, timeMat);
-    this.timeMesh.position.set(0.94, rowY, 0.02);
-    this.timeMesh.userData = { ...timeUi };
-    this.menuGroup.add(this.timeMesh);
-
-    // 3. Subtitle Toggle Button
-    const ccBtn = this.createButtonMesh('💬 CC', 1.60, rowY, () => this.toggleSubtitles(), {
-      width: 0.46,
-      height: 0.14,
-      canvasW: 168,
-      canvasH: 56,
-      fontSize: 21
+    const timeUi = this.createUiTexture(240, 52);
+    const timeGeom = new THREE.PlaneGeometry(0.72, 0.14);
+    const timeMat = new THREE.MeshBasicMaterial({
+      map: timeUi.texture,
+      transparent: true,
+      depthWrite: false,
+      side: THREE.DoubleSide
     });
-    this.menuGroup.add(ccBtn);
-    this.interactiveObjects.push(ccBtn);
-    this.ccBtnMesh = ccBtn;
+    this.timeMesh = new THREE.Mesh(timeGeom, timeMat);
+    this.timeMesh.position.set(1.01, rowY, 0.02);
+    this.timeMesh.renderOrder = 6;
+    this.timeMesh.userData = { ...timeUi };
+    targetGroup.add(this.timeMesh);
+
+    this.ccBtnMesh = this.addButtonToGroup(
+      {
+        icon: 'cc',
+        label: 'CC',
+        x: 1.61,
+        y: rowY,
+        w: 0.38,
+        h: 0.14,
+        canvasW: 168,
+        canvasH: 56,
+        fontSize: 19,
+        variant: 'subtle',
+        action: () => this.toggleSubtitles()
+      },
+      targetGroup,
+      rayList
+    );
 
     this.drawSeekBar(0, null);
     this.drawTimeReadout(0, 0, null);
   }
 
-  createButtonMesh(text, x, y, onClick, opts = {}) {
-    const width = opts.width ?? 0.62;
-    const height = opts.height ?? 0.2;
-    const canvasW = opts.canvasW ?? 256;
-    const canvasH = opts.canvasH ?? 80;
-    const fontSize = opts.fontSize ?? 26;
+  createButtonMesh(cfg) {
+    const width = cfg.w ?? 0.66;
+    const height = cfg.h ?? 0.21;
+    const canvasW = cfg.canvasW ?? 220;
+    const canvasH = cfg.canvasH ?? 80;
+    const fontSize = cfg.fontSize ?? 22;
 
     const ui = this.createUiTexture(canvasW, canvasH);
     const geom = new THREE.PlaneGeometry(width, height);
     const mat = new THREE.MeshBasicMaterial({
       map: ui.texture,
       transparent: true,
+      depthWrite: false,
       side: THREE.DoubleSide
     });
 
     const mesh = new THREE.Mesh(geom, mat);
-    mesh.position.set(x, y, 0.02);
+    mesh.position.set(cfg.x, cfg.y, 0.02);
+    mesh.renderOrder = 6;
     mesh.userData = {
-      onClick,
+      onClick: cfg.action,
       originalScale: new THREE.Vector3(1, 1, 1),
       ...ui,
       canvasW,
       canvasH,
       fontSize,
-      currentText: ''
+      icon: cfg.icon || null,
+      label: cfg.label || '',
+      variant: cfg.variant || 'glass',
+      active: Boolean(cfg.active),
+      hovered: false,
+      renderKey: ''
     };
 
-    this.updateButtonText(mesh, text);
+    this.drawButton(mesh);
     return mesh;
   }
 
-  updateButtonText(mesh, text) {
+  drawIcon(ctx, icon, cx, cy, s, color) {
+    if (!icon) return;
+    const r = s * 0.48;
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.fillStyle = color;
+    ctx.lineWidth = Math.max(1.8, s * 0.12);
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+
+    switch (icon) {
+      case 'play': {
+        ctx.beginPath();
+        ctx.moveTo(cx - r * 0.55, cy - r * 0.78);
+        ctx.lineTo(cx + r * 0.85, cy);
+        ctx.lineTo(cx - r * 0.55, cy + r * 0.78);
+        ctx.closePath();
+        ctx.fill();
+        break;
+      }
+      case 'pause': {
+        const bw = r * 0.34;
+        const bh = r * 1.4;
+        this.roundedRectPath(ctx, cx - r * 0.52, cy - bh / 2, bw, bh, 2);
+        ctx.fill();
+        this.roundedRectPath(ctx, cx + r * 0.18, cy - bh / 2, bw, bh, 2);
+        ctx.fill();
+        break;
+      }
+      case 'rewind': {
+        for (const offset of [-r * 0.32, r * 0.42]) {
+          ctx.beginPath();
+          ctx.moveTo(cx + offset + r * 0.18, cy - r * 0.6);
+          ctx.lineTo(cx + offset - r * 0.48, cy);
+          ctx.lineTo(cx + offset + r * 0.18, cy + r * 0.6);
+          ctx.closePath();
+          ctx.fill();
+        }
+        break;
+      }
+      case 'forward': {
+        for (const offset of [-r * 0.42, r * 0.32]) {
+          ctx.beginPath();
+          ctx.moveTo(cx + offset - r * 0.18, cy - r * 0.6);
+          ctx.lineTo(cx + offset + r * 0.48, cy);
+          ctx.lineTo(cx + offset - r * 0.18, cy + r * 0.6);
+          ctx.closePath();
+          ctx.fill();
+        }
+        break;
+      }
+      case 'sound':
+      case 'muted': {
+        ctx.beginPath();
+        ctx.moveTo(cx - r * 0.75, cy - r * 0.32);
+        ctx.lineTo(cx - r * 0.35, cy - r * 0.32);
+        ctx.lineTo(cx + r * 0.15, cy - r * 0.72);
+        ctx.lineTo(cx + r * 0.15, cy + r * 0.72);
+        ctx.lineTo(cx - r * 0.35, cy + r * 0.32);
+        ctx.lineTo(cx - r * 0.75, cy + r * 0.32);
+        ctx.closePath();
+        ctx.fill();
+
+        if (icon === 'sound') {
+          ctx.beginPath();
+          ctx.arc(cx + r * 0.25, cy, r * 0.36, -0.75, 0.75);
+          ctx.stroke();
+          ctx.beginPath();
+          ctx.arc(cx + r * 0.25, cy, r * 0.66, -0.75, 0.75);
+          ctx.stroke();
+        } else {
+          ctx.beginPath();
+          ctx.moveTo(cx + r * 0.42, cy - r * 0.34);
+          ctx.lineTo(cx + r * 0.92, cy + r * 0.34);
+          ctx.moveTo(cx + r * 0.92, cy - r * 0.34);
+          ctx.lineTo(cx + r * 0.42, cy + r * 0.34);
+          ctx.stroke();
+        }
+        break;
+      }
+      case 'room': {
+        this.roundedRectPath(ctx, cx - r * 0.88, cy - r * 0.62, r * 1.76, r * 1.1, 3);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(cx - r * 0.45, cy + r * 0.8);
+        ctx.lineTo(cx + r * 0.45, cy + r * 0.8);
+        ctx.stroke();
+        break;
+      }
+      case 'seat': {
+        // Curved theater screen arc
+        ctx.beginPath();
+        ctx.moveTo(cx - r * 0.88, cy - r * 0.45);
+        ctx.quadraticCurveTo(cx, cy - r * 0.18, cx + r * 0.88, cy - r * 0.45);
+        ctx.lineTo(cx + r * 0.88, cy + r * 0.45);
+        ctx.quadraticCurveTo(cx, cy + r * 0.18, cx - r * 0.88, cy + r * 0.45);
+        ctx.closePath();
+        ctx.stroke();
+        break;
+      }
+      case 'recenter': {
+        ctx.beginPath();
+        ctx.arc(cx, cy, r * 0.62, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(cx, cy, r * 0.18, 0, Math.PI * 2);
+        ctx.fill();
+        for (const [dx, dy] of [[0, -1], [0, 1], [-1, 0], [1, 0]]) {
+          ctx.beginPath();
+          ctx.moveTo(cx + dx * r * 0.48, cy + dy * r * 0.48);
+          ctx.lineTo(cx + dx * r * 0.9, cy + dy * r * 0.9);
+          ctx.stroke();
+        }
+        break;
+      }
+      case 'settings': {
+        ctx.beginPath();
+        ctx.arc(cx, cy, r * 0.3, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(cx, cy, r * 0.64, 0, Math.PI * 2);
+        ctx.stroke();
+        for (let i = 0; i < 6; i++) {
+          const a = (i * Math.PI) / 3;
+          ctx.beginPath();
+          ctx.moveTo(cx + Math.cos(a) * r * 0.58, cy + Math.sin(a) * r * 0.58);
+          ctx.lineTo(cx + Math.cos(a) * r * 0.88, cy + Math.sin(a) * r * 0.88);
+          ctx.stroke();
+        }
+        break;
+      }
+      case 'exit': {
+        ctx.beginPath();
+        ctx.moveTo(cx + r * 0.1, cy - r * 0.72);
+        ctx.lineTo(cx - r * 0.72, cy - r * 0.72);
+        ctx.lineTo(cx - r * 0.72, cy + r * 0.72);
+        ctx.lineTo(cx + r * 0.1, cy + r * 0.72);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(cx - r * 0.18, cy);
+        ctx.lineTo(cx + r * 0.82, cy);
+        ctx.moveTo(cx + r * 0.46, cy - r * 0.36);
+        ctx.lineTo(cx + r * 0.84, cy);
+        ctx.lineTo(cx + r * 0.46, cy + r * 0.36);
+        ctx.stroke();
+        break;
+      }
+      case 'cc': {
+        this.roundedRectPath(ctx, cx - r * 0.88, cy - r * 0.62, r * 1.76, r * 1.24, 3);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(cx - r * 0.45, cy + r * 0.18);
+        ctx.lineTo(cx + r * 0.08, cy + r * 0.18);
+        ctx.moveTo(cx + r * 0.24, cy + r * 0.18);
+        ctx.lineTo(cx + r * 0.5, cy + r * 0.18);
+        ctx.stroke();
+        break;
+      }
+      case 'back': {
+        ctx.beginPath();
+        ctx.moveTo(cx + r * 0.25, cy - r * 0.6);
+        ctx.lineTo(cx - r * 0.45, cy);
+        ctx.lineTo(cx + r * 0.25, cy + r * 0.6);
+        ctx.stroke();
+        break;
+      }
+      case 'format3d': {
+        this.roundedRectPath(ctx, cx - r * 0.92, cy - r * 0.55, r * 1.84, r * 1.1, 4);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(cx - r * 0.36, cy, r * 0.22, 0, Math.PI * 2);
+        ctx.arc(cx + r * 0.36, cy, r * 0.22, 0, Math.PI * 2);
+        ctx.stroke();
+        break;
+      }
+      case 'swap': {
+        ctx.beginPath();
+        ctx.moveTo(cx - r * 0.72, cy - r * 0.32);
+        ctx.lineTo(cx + r * 0.72, cy - r * 0.32);
+        ctx.lineTo(cx + r * 0.38, cy - r * 0.62);
+        ctx.moveTo(cx + r * 0.72, cy + r * 0.32);
+        ctx.lineTo(cx - r * 0.72, cy + r * 0.32);
+        ctx.lineTo(cx - r * 0.38, cy + r * 0.62);
+        ctx.stroke();
+        break;
+      }
+      case 'bed': {
+        // Reclined screen angle icon
+        ctx.beginPath();
+        ctx.moveTo(cx - r * 0.8, cy + r * 0.52);
+        ctx.lineTo(cx + r * 0.8, cy + r * 0.52);
+        ctx.moveTo(cx - r * 0.65, cy - r * 0.15);
+        ctx.lineTo(cx + r * 0.62, cy - r * 0.62);
+        ctx.stroke();
+        break;
+      }
+      case 'brightness': {
+        ctx.beginPath();
+        ctx.arc(cx, cy, r * 0.38, 0, Math.PI * 2);
+        ctx.stroke();
+        for (let i = 0; i < 8; i++) {
+          const a = (i * Math.PI) / 4;
+          ctx.beginPath();
+          ctx.moveTo(cx + Math.cos(a) * r * 0.6, cy + Math.sin(a) * r * 0.6);
+          ctx.lineTo(cx + Math.cos(a) * r * 0.88, cy + Math.sin(a) * r * 0.88);
+          ctx.stroke();
+        }
+        break;
+      }
+      case 'ipd': {
+        ctx.beginPath();
+        ctx.arc(cx - r * 0.52, cy - r * 0.15, r * 0.28, 0, Math.PI * 2);
+        ctx.arc(cx + r * 0.52, cy - r * 0.15, r * 0.28, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(cx - r * 0.52, cy + r * 0.56);
+        ctx.lineTo(cx + r * 0.52, cy + r * 0.56);
+        ctx.stroke();
+        break;
+      }
+      case 'fov': {
+        ctx.beginPath();
+        ctx.moveTo(cx - r * 0.65, cy);
+        ctx.lineTo(cx + r * 0.65, cy - r * 0.68);
+        ctx.moveTo(cx - r * 0.65, cy);
+        ctx.lineTo(cx + r * 0.65, cy + r * 0.68);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(cx - r * 0.65, cy, r * 0.82, -0.7, 0.7);
+        ctx.stroke();
+        break;
+      }
+      case 'lens': {
+        ctx.beginPath();
+        ctx.ellipse(cx, cy, r * 0.45, r * 0.82, 0, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(cx - r * 0.85, cy);
+        ctx.lineTo(cx + r * 0.85, cy);
+        ctx.stroke();
+        break;
+      }
+      case 'dwell': {
+        ctx.beginPath();
+        ctx.arc(cx, cy, r * 0.72, -Math.PI / 2, Math.PI * 0.9);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(cx, cy, r * 0.2, 0, Math.PI * 2);
+        ctx.fill();
+        break;
+      }
+    }
+
+    ctx.restore();
+  }
+
+  updateButtonState(mesh, { icon, label, active, hovered, variant } = {}) {
     if (!mesh || !mesh.userData) return;
-    const { ctx, canvasW = 256, canvasH = 80, fontSize = 26 } = mesh.userData;
+    const ud = mesh.userData;
+    if (icon !== undefined) ud.icon = icon;
+    if (label !== undefined) ud.label = label;
+    if (active !== undefined) ud.active = Boolean(active);
+    if (hovered !== undefined) ud.hovered = Boolean(hovered);
+    if (variant !== undefined) ud.variant = variant;
+    this.drawButton(mesh);
+  }
+
+  drawButton(mesh) {
+    if (!mesh || !mesh.userData) return;
+    const ud = mesh.userData;
+    const {
+      ctx,
+      canvasW = 220,
+      canvasH = 80,
+      fontSize = 22,
+      icon,
+      label,
+      variant = 'glass',
+      active = false,
+      hovered = false
+    } = ud;
+
+    const nextKey = `${icon}|${label}|${variant}|${active}|${hovered}`;
+    if (ud.renderKey === nextKey) return;
+    ud.renderKey = nextKey;
 
     ctx.clearRect(0, 0, canvasW, canvasH);
 
-    ctx.fillStyle = '#1e2235';
-    if (ctx.roundRect) {
+    const pad = 4;
+    const rw = canvasW - pad * 2;
+    const rh = canvasH - pad * 2;
+    const radius = Math.min(16, rh * 0.26);
+
+    // Choose palette based on semantic hierarchy (CTA > Accent/Active > Glass > Subtle > Danger)
+    let fill = '#161a30';
+    let stroke = 'rgba(148, 163, 184, 0.28)';
+    let strokeWidth = 2;
+    let textColor = '#f1f5f9';
+    let iconColor = '#cbd5e1';
+
+    if (variant === 'primary') {
+      const grad = ctx.createLinearGradient(pad, pad, canvasW - pad, canvasH - pad);
+      grad.addColorStop(0, hovered ? '#3b82f6' : '#2563eb');
+      grad.addColorStop(1, hovered ? '#6366f1' : '#4f46e5');
+      fill = grad;
+      stroke = hovered ? '#bae6fd' : 'rgba(147, 197, 253, 0.55)';
+      strokeWidth = 2.5;
+      textColor = '#ffffff';
+      iconColor = '#ffffff';
+    } else if (variant === 'danger') {
+      fill = hovered ? '#2d1824' : '#1b111a';
+      stroke = hovered ? '#f87171' : 'rgba(248, 113, 113, 0.36)';
+      textColor = '#fecaca';
+      iconColor = '#fca5a5';
+    } else if (active || variant === 'accent') {
+      fill = hovered ? '#183754' : '#10273e';
+      stroke = hovered ? '#7dd3fc' : 'rgba(56, 189, 248, 0.68)';
+      strokeWidth = 2.2;
+      textColor = '#f0f9ff';
+      iconColor = '#38bdf8';
+    } else if (variant === 'subtle') {
+      fill = hovered ? '#1c223f' : '#111528';
+      stroke = hovered ? '#38bdf8' : 'rgba(148, 163, 184, 0.22)';
+      textColor = hovered ? '#ffffff' : '#cbd5e1';
+      iconColor = hovered ? '#38bdf8' : '#94a3b8';
+    } else {
+      // 'glass'
+      fill = hovered ? '#202646' : '#161b33';
+      stroke = hovered ? '#38bdf8' : 'rgba(148, 163, 184, 0.3)';
+      textColor = '#f8fafc';
+      iconColor = hovered ? '#7dd3fc' : '#cbd5e1';
+    }
+
+    this.roundedRectPath(ctx, pad, pad, rw, rh, radius);
+    ctx.fillStyle = fill;
+    ctx.fill();
+    ctx.strokeStyle = stroke;
+    ctx.lineWidth = strokeWidth;
+    ctx.stroke();
+
+    // Active status dot for toggled settings
+    if (active && variant !== 'primary') {
+      ctx.fillStyle = '#38bdf8';
       ctx.beginPath();
-      ctx.roundRect(4, 4, canvasW - 8, canvasH - 8, 16);
+      ctx.arc(canvasW - 16, 16, 4, 0, Math.PI * 2);
       ctx.fill();
-    } else {
-      ctx.fillRect(4, 4, canvasW - 8, canvasH - 8);
     }
 
-    ctx.strokeStyle = '#4f46e5';
-    ctx.lineWidth = 4;
-    if (ctx.roundRect) {
-      ctx.beginPath();
-      ctx.roundRect(4, 4, canvasW - 8, canvasH - 8, 16);
-      ctx.stroke();
-    } else {
-      ctx.strokeRect(4, 4, canvasW - 8, canvasH - 8);
-    }
-
-    ctx.fillStyle = '#ffffff';
-    ctx.font = `bold ${fontSize}px -apple-system, sans-serif`;
-    ctx.textAlign = 'center';
+    // Center [vector icon + gap + text] horizontally
+    ctx.font = `600 ${fontSize}px -apple-system, BlinkMacSystemFont, sans-serif`;
     ctx.textBaseline = 'middle';
-    ctx.fillText(text, canvasW / 2, canvasH / 2);
 
-    mesh.userData.currentText = text;
+    const textW = label ? ctx.measureText(label).width : 0;
+    const iconSize = icon ? Math.round(fontSize * 0.96) : 0;
+    const gap = icon && label ? 9 : 0;
+    const totalW = iconSize + gap + textW;
+    const startX = (canvasW - totalW) / 2;
+    const cy = canvasH / 2;
+
+    if (icon) {
+      this.drawIcon(ctx, icon, startX + iconSize / 2, cy, iconSize, iconColor);
+    }
+
+    if (label) {
+      ctx.fillStyle = textColor;
+      ctx.textAlign = 'left';
+      ctx.fillText(label, startX + iconSize + gap, cy + 1);
+    }
+
     if (mesh.material.map) {
       mesh.material.map.needsUpdate = true;
     }
+  }
+
+  setHoveredObject(hitObj) {
+    if (this.hoveredObject === hitObj) return;
+
+    if (this.hoveredObject) {
+      this.hoveredObject.scale.set(1, 1, 1);
+      if (!this.hoveredObject.userData?.isSeekBar) {
+        this.updateButtonState(this.hoveredObject, { hovered: false });
+      }
+    }
+
+    this.hoveredObject = hitObj;
+
+    if (this.hoveredObject) {
+      if (!this.hoveredObject.userData?.noHoverScale) {
+        this.hoveredObject.scale.set(1.06, 1.06, 1.06);
+      }
+      if (!this.hoveredObject.userData?.isSeekBar) {
+        this.updateButtonState(this.hoveredObject, { hovered: true });
+      }
+    }
+  }
+
+  setSettingsOpen(open) {
+    this.isSettingsOpen = Boolean(open);
+    this.setHoveredObject(null);
+    this.dwellTarget = null;
+    this.dwellConsumed = false;
+    this.hoverSeekRatio = null;
+    if (this.dwellRing) this.dwellRing.visible = false;
+
+    if (this.mainGroup) this.mainGroup.visible = !this.isSettingsOpen;
+    if (this.settingsGroup) this.settingsGroup.visible = this.isSettingsOpen;
+    this.updateDynamicLabels(performance.now());
   }
 
   triggerInteractiveObject(targetObj, targetSeekRatio) {
@@ -343,13 +1019,11 @@ export class GazeUI {
 
   initClickListeners() {
     const handleTrigger = () => {
-      // Bug 2: Ignore any pointer events if VR is not active (prevents launcher taps triggering VR UI)
       if (!this.rig.isVrActive) return;
 
       const now = performance.now();
       // Double click detection (<350ms) -> Instant Recenter!
       if (now - this.lastClickTime < 350) {
-        // Bug 4: Cancel pending single click action so recenter has zero side-effects
         if (this.clickTimeout) {
           clearTimeout(this.clickTimeout);
           this.clickTimeout = null;
@@ -360,11 +1034,9 @@ export class GazeUI {
       }
       this.lastClickTime = now;
 
-      // Capture target object & seek ratio at time of tap
       const targetObj = this.hoveredObject;
       const targetSeekRatio = this.hoverSeekRatio;
 
-      // Bug 4: Debounce single click action (~280ms) so double-click cancels cleanly
       this.clickTimeout = setTimeout(() => {
         this.clickTimeout = null;
         if (!this.rig.isVrActive) return;
@@ -374,10 +1046,8 @@ export class GazeUI {
       }, 280);
     };
 
-    // JioDive capacitive button triggers pointerdown / touchstart on the screen
     window.addEventListener('pointerdown', handleTrigger);
 
-    // Keyboard shortcuts for desktop / Bluetooth HID clickers while VR is active
     window.addEventListener('keydown', (e) => {
       if (!this.rig.isVrActive) return;
       if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'TEXTAREA')) {
@@ -420,23 +1090,26 @@ export class GazeUI {
   }
 
   pulseButton(mesh) {
-    mesh.scale.set(1.15, 1.15, 1.15);
+    mesh.scale.set(1.13, 1.13, 1.13);
     setTimeout(() => {
-      mesh.scale.set(1, 1, 1);
-    }, 150);
+      if (this.hoveredObject === mesh && !mesh.userData?.noHoverScale) {
+        mesh.scale.set(1.06, 1.06, 1.06);
+      } else {
+        mesh.scale.set(1, 1, 1);
+      }
+    }, 140);
   }
 
-  syncSelect(id, value) {
-    const el = document.getElementById(id);
-    if (el && el.value !== value) {
-      el.value = value;
-      el.dispatchEvent(new Event('change'));
-    }
+  emitPrefSync(key, value) {
+    window.dispatchEvent(new CustomEvent('jiodive:sync', { detail: { key, value: String(value) } }));
   }
 
   toggleMenu() {
     this.isMenuVisible = !this.isMenuVisible;
     this.menuGroup.visible = this.isMenuVisible;
+    if (!this.isMenuVisible) {
+      this.setHoveredObject(null);
+    }
   }
 
   togglePlay() {
@@ -474,55 +1147,49 @@ export class GazeUI {
   }
 
   cycleEnvironment() {
-    const envs = ['cinema', 'void'];
-    const next = envs[(envs.indexOf(this.environments.currentEnv) + 1) % envs.length];
+    const next = this.environments.currentEnv === 'cinema' ? 'void' : 'cinema';
     this.environments.setEnvironment(next, this.screen, this);
-    this.syncSelect('env-select', next);
+    this.emitPrefSync('env', next);
   }
 
   toggleBedMode() {
     const target = this.environments.currentEnv === 'bed' ? 'cinema' : 'bed';
     this.environments.setEnvironment(target, this.screen, this);
-    this.syncSelect('env-select', target);
+    this.emitPrefSync('env', target);
   }
 
   cycleFormat() {
     const formats = ['2d', '3d-hsbs', '3d-fsbs', '3d-hou', '3d-fou'];
     const next = formats[(formats.indexOf(this.screen.format) + 1) % formats.length];
     this.screen.setFormat(next);
-    this.syncSelect('mode-select', next);
+    this.emitPrefSync('mode', next);
   }
 
   cycleScreenPreset() {
     const presets = ['imax', 'standard', 'balcony'];
     const next = presets[(presets.indexOf(this.screen.screenPreset) + 1) % presets.length];
     this.screen.setScreenPreset(next);
-    this.syncSelect('size-select', next);
+    this.emitPrefSync('screenSize', next);
   }
 
   toggleSwapEyes() {
     if (!this.screen) return;
     const swapped = this.screen.toggleSwapEyes();
-    this.syncSelect('swap-eyes-select', swapped ? 'swapped' : 'normal');
+    this.emitPrefSync('swapEyes', swapped ? 'swapped' : 'normal');
   }
 
   cycleIPD() {
     const ipdValues = [0.058, 0.062, 0.064, 0.068, 0.072];
-    const currentIndex = ipdValues.findIndex(v => Math.abs(v - this.rig.ipd) < 0.001);
-    const nextIndex = (currentIndex + 1) % ipdValues.length;
-    const newIPD = ipdValues[nextIndex];
+    const currentIndex = ipdValues.findIndex((v) => Math.abs(v - this.rig.ipd) < 0.001);
+    const newIPD = ipdValues[(currentIndex + 1) % ipdValues.length];
     this.rig.setIPD(newIPD);
-    const mm = Math.round(newIPD * 1000);
-    if (this.ipdBtnMesh) {
-      this.updateButtonText(this.ipdBtnMesh, `👁 ${mm}mm`);
-    }
-    this.syncSelect('ipd-select', newIPD.toString());
+    this.emitPrefSync('ipd', newIPD);
   }
 
   toggleDistortion() {
     const next = !this.rig.distortionEnabled;
     this.rig.setDistortion(next);
-    this.syncSelect('distortion-select', next ? 'jiodive' : 'off');
+    this.emitPrefSync('distortion', next ? 'jiodive' : 'off');
   }
 
   setBrightness(level) {
@@ -536,10 +1203,10 @@ export class GazeUI {
 
   cycleBrightness() {
     const levels = [1.0, 0.8, 0.6];
-    const currentIndex = levels.findIndex(v => Math.abs(v - this.brightness) < 0.05);
+    const currentIndex = levels.findIndex((v) => Math.abs(v - this.brightness) < 0.05);
     const next = levels[(currentIndex + 1) % levels.length];
     this.setBrightness(next);
-    this.syncSelect('brightness-select', next.toString());
+    this.emitPrefSync('brightness', next);
   }
 
   setGazeDwell(enabled) {
@@ -554,20 +1221,21 @@ export class GazeUI {
   toggleGazeDwell() {
     const next = !this.gazeDwellEnabled;
     this.setGazeDwell(next);
-    this.syncSelect('dwell-select', next ? '1200' : 'off');
+    this.emitPrefSync('dwell', next ? '1200' : 'off');
   }
 
   cycleFOV() {
     const fovs = [70, 75, 80, 85];
-    const currentIndex = fovs.findIndex(v => Math.abs(v - this.rig.fov) < 1);
+    const currentIndex = fovs.findIndex((v) => Math.abs(v - this.rig.fov) < 1);
     const next = fovs[(currentIndex + 1) % fovs.length];
     this.rig.setFOV(next);
-    this.syncSelect('fov-select', next.toString());
+    this.emitPrefSync('fov', next);
   }
 
   exitVR() {
     this.rig.isVrActive = false;
-    this.setBrightness(this.brightness); // Ensures dimmer opacity resets to 0 on launcher
+    this.setSettingsOpen(false);
+    this.setBrightness(this.brightness); // Resets dimmer opacity to 0 on launcher
     if (this.video) {
       this.video.pause();
     }
@@ -576,6 +1244,7 @@ export class GazeUI {
     }
     const launcher = document.getElementById('launcher');
     if (launcher) {
+      launcher.inert = false;
       launcher.classList.remove('hidden');
     }
   }
@@ -594,65 +1263,48 @@ export class GazeUI {
   drawSeekBar(progressRatio, hoverRatio) {
     if (!this.seekBarMesh || !this.seekBarMesh.userData) return;
     const { ctx, logicalW: w, logicalH: h } = this.seekBarMesh.userData;
-    const padX = 14;
+    const padX = 16;
     const trackW = w - padX * 2;
-    const trackH = 12;
+    const trackH = 10;
     const trackY = (h - trackH) / 2;
 
     ctx.clearRect(0, 0, w, h);
 
-    // Subtle interactive container pill
-    ctx.fillStyle = hoverRatio !== null ? '#252a42' : '#181b2c';
-    ctx.beginPath();
-    if (ctx.roundRect) {
-      ctx.roundRect(2, 2, w - 4, h - 4, 14);
-    } else {
-      ctx.rect(2, 2, w - 4, h - 4);
-    }
+    this.roundedRectPath(ctx, 2, 2, w - 4, h - 4, 14);
+    ctx.fillStyle = hoverRatio !== null ? '#1e2542' : '#121528';
     ctx.fill();
-
-    ctx.strokeStyle = hoverRatio !== null ? '#818cf8' : '#313659';
-    ctx.lineWidth = 3;
+    ctx.strokeStyle = hoverRatio !== null ? '#38bdf8' : 'rgba(148, 163, 184, 0.22)';
+    ctx.lineWidth = 2;
     ctx.stroke();
 
     // Base track
-    ctx.fillStyle = '#334155';
-    ctx.beginPath();
-    if (ctx.roundRect) {
-      ctx.roundRect(padX, trackY, trackW, trackH, 6);
-    } else {
-      ctx.rect(padX, trackY, trackW, trackH);
-    }
+    this.roundedRectPath(ctx, padX, trackY, trackW, trackH, 5);
+    ctx.fillStyle = '#27324b';
     ctx.fill();
 
     // Filled progress
     const fillW = Math.max(0, Math.min(trackW, trackW * progressRatio));
     if (fillW > 0) {
       const grad = ctx.createLinearGradient(padX, 0, padX + trackW, 0);
-      grad.addColorStop(0, '#6366f1');
-      grad.addColorStop(1, '#38bdf8');
+      grad.addColorStop(0, '#38bdf8');
+      grad.addColorStop(1, '#6366f1');
+      this.roundedRectPath(ctx, padX, trackY, fillW, trackH, 5);
       ctx.fillStyle = grad;
-      ctx.beginPath();
-      if (ctx.roundRect) {
-        ctx.roundRect(padX, trackY, fillW, trackH, 6);
-      } else {
-        ctx.rect(padX, trackY, fillW, trackH);
-      }
       ctx.fill();
     }
 
     // Gaze hover indicator line
     if (hoverRatio !== null) {
       const hx = padX + trackW * THREE.MathUtils.clamp(hoverRatio, 0, 1);
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.75)';
-      ctx.fillRect(hx - 2, trackY - 6, 4, trackH + 12);
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
+      ctx.fillRect(hx - 1.5, trackY - 6, 3, trackH + 12);
     }
 
     // Current playback thumb knob
     const kx = padX + fillW;
     ctx.fillStyle = '#ffffff';
     ctx.beginPath();
-    ctx.arc(kx, h / 2, 10, 0, Math.PI * 2);
+    ctx.arc(kx, h / 2, 8.5, 0, Math.PI * 2);
     ctx.fill();
 
     if (this.seekBarMesh.material.map) {
@@ -666,28 +1318,26 @@ export class GazeUI {
 
     ctx.clearRect(0, 0, w, h);
 
-    ctx.fillStyle = '#181b2c';
-    ctx.beginPath();
-    if (ctx.roundRect) {
-      ctx.roundRect(2, 2, w - 4, h - 4, 12);
-    } else {
-      ctx.rect(2, 2, w - 4, h - 4);
-    }
+    this.roundedRectPath(ctx, 2, 2, w - 4, h - 4, 12);
+    ctx.fillStyle = '#121528';
     ctx.fill();
+    ctx.strokeStyle = 'rgba(148, 163, 184, 0.2)';
+    ctx.lineWidth = 2;
+    ctx.stroke();
 
     const hasDur = Number.isFinite(durationSec) && durationSec > 0;
     let label = `${this.formatTime(currentSec)} / ${hasDur ? this.formatTime(durationSec) : '--:--'}`;
     ctx.fillStyle = '#e2e8f0';
 
     if (hoverRatio !== null && hasDur) {
-      label = `➔ ${this.formatTime(hoverRatio * durationSec)}`;
-      ctx.fillStyle = '#7dd3fc';
+      label = `Seek ${this.formatTime(hoverRatio * durationSec)}`;
+      ctx.fillStyle = '#38bdf8';
     }
 
-    ctx.font = 'bold 23px -apple-system, monospace';
+    ctx.font = '600 20px -apple-system, BlinkMacSystemFont, monospace';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText(label, w / 2, h / 2);
+    ctx.fillText(label, w / 2, h / 2 + 1);
 
     if (this.timeMesh.material.map) {
       this.timeMesh.material.map.needsUpdate = true;
@@ -695,11 +1345,10 @@ export class GazeUI {
   }
 
   /**
-   * Bug 6 Fix: Reorient menu in Bed Mode so it tilts with the screen onto the ceiling
+   * Reorient menu in Bed Mode so it tilts onto the ceiling alongside the screen
    */
   setTilt(pitchDegrees) {
     const pitchRad = THREE.MathUtils.degToRad(pitchDegrees);
-    // Relative to eye position (0, 1.4, 0), normal menu pos is (0, -0.91, -3.6)
     const relY = -0.91;
     const relZ = -3.6;
 
@@ -739,7 +1388,6 @@ export class GazeUI {
       this.prevPadButtons[b] = pressed(b);
     }
 
-    // Optional thumbstick look pan on non-gyro desktops
     if (!this.rig.hasGyro && pad.axes && pad.axes.length >= 2) {
       const ax = Math.abs(pad.axes[0]) > 0.22 ? pad.axes[0] : (pad.axes.length >= 3 && Math.abs(pad.axes[2]) > 0.22 ? pad.axes[2] : 0);
       const ay = Math.abs(pad.axes[1]) > 0.22 ? pad.axes[1] : (pad.axes.length >= 4 && Math.abs(pad.axes[3]) > 0.22 ? pad.axes[3] : 0);
@@ -791,92 +1439,113 @@ export class GazeUI {
   }
 
   updateDynamicLabels(now) {
-    if (this.video) {
-      if (this.playBtnMesh) {
-        const expectedPlay = this.video.paused ? '▶ Play' : '⏸ Pause';
-        if (this.playBtnMesh.userData.currentText !== expectedPlay) {
-          this.updateButtonText(this.playBtnMesh, expectedPlay);
+    if (!this.isSettingsOpen) {
+      if (this.video) {
+        if (this.playBtnMesh) {
+          this.updateButtonState(this.playBtnMesh, {
+            icon: this.video.paused ? 'play' : 'pause',
+            label: this.video.paused ? 'Play' : 'Pause'
+          });
+        }
+        if (this.audioBtnMesh) {
+          this.updateButtonState(this.audioBtnMesh, {
+            icon: this.video.muted ? 'muted' : 'sound',
+            label: this.video.muted ? 'Muted' : 'Audio',
+            active: this.video.muted
+          });
         }
       }
 
-      if (this.audioBtnMesh) {
-        const expectedAudio = this.video.muted ? '🔇 Muted' : '🔊 Sound';
-        if (this.audioBtnMesh.userData.currentText !== expectedAudio) {
-          this.updateButtonText(this.audioBtnMesh, expectedAudio);
-        }
+      if (this.roomBtnMesh && this.environments) {
+        const env = this.environments.currentEnv;
+        const roomLabel = env === 'void' ? 'Void' : (env === 'bed' ? 'Bed' : 'Cinema');
+        this.updateButtonState(this.roomBtnMesh, {
+          label: roomLabel,
+          active: env !== 'cinema'
+        });
       }
+
+      if (this.sizeBtnMesh && this.screen) {
+        const sizeLabel = SCREEN_PRESETS[this.screen.screenPreset]?.label || 'Standard';
+        this.updateButtonState(this.sizeBtnMesh, { label: sizeLabel });
+      }
+
+      if (this.ccBtnMesh && this.screen) {
+        let ccLabel = 'CC';
+        let ccActive = false;
+        if (now < this.ccHintUntil) {
+          ccLabel = 'No SRT';
+        } else if (this.screen.subtitleCues && this.screen.subtitleCues.length > 0) {
+          ccActive = Boolean(this.screen.subtitlesEnabled);
+          ccLabel = ccActive ? 'CC On' : 'CC Off';
+        }
+        this.updateButtonState(this.ccBtnMesh, { label: ccLabel, active: ccActive });
+      }
+      return;
     }
 
+    // Settings sub-panel labels
     if (this.formatBtnMesh && this.screen) {
-      let fmtLabel = '🕶 2D';
-      if (this.screen.format === '3d-hsbs' || this.screen.format === '3d-sbs') fmtLabel = '👓 Half-SBS';
-      else if (this.screen.format === '3d-fsbs') fmtLabel = '👓 Full-SBS';
-      else if (this.screen.format === '3d-hou' || this.screen.format === '3d-ou') fmtLabel = '👓 Half-OU';
-      else if (this.screen.format === '3d-fou') fmtLabel = '👓 Full-OU';
-      if (this.formatBtnMesh.userData.currentText !== fmtLabel) {
-        this.updateButtonText(this.formatBtnMesh, fmtLabel);
-      }
-    }
-
-    if (this.ipdBtnMesh) {
-      const expectedIpd = `👁 ${Math.round(this.rig.ipd * 1000)}mm`;
-      if (this.ipdBtnMesh.userData.currentText !== expectedIpd) {
-        this.updateButtonText(this.ipdBtnMesh, expectedIpd);
-      }
-    }
-
-    if (this.sizeBtnMesh && this.screen) {
-      const sizeLabel = SCREEN_PRESETS[this.screen.screenPreset]?.label || '📐 Standard';
-      if (this.sizeBtnMesh.userData.currentText !== sizeLabel) {
-        this.updateButtonText(this.sizeBtnMesh, sizeLabel);
-      }
+      let fmtLabel = '2D Mode';
+      if (this.screen.format === '3d-hsbs' || this.screen.format === '3d-sbs') fmtLabel = 'Half-SBS';
+      else if (this.screen.format === '3d-fsbs') fmtLabel = 'Full-SBS';
+      else if (this.screen.format === '3d-hou' || this.screen.format === '3d-ou') fmtLabel = 'Half-OU';
+      else if (this.screen.format === '3d-fou') fmtLabel = 'Full-OU';
+      this.updateButtonState(this.formatBtnMesh, {
+        label: fmtLabel,
+        active: this.screen.format !== '2d'
+      });
     }
 
     if (this.swapBtnMesh && this.screen) {
-      const swapLabel = this.screen.swapEyes ? '🔀 R/L' : '🔀 L/R';
-      if (this.swapBtnMesh.userData.currentText !== swapLabel) {
-        this.updateButtonText(this.swapBtnMesh, swapLabel);
-      }
+      this.updateButtonState(this.swapBtnMesh, {
+        label: this.screen.swapEyes ? 'Eyes R/L' : 'Eyes L/R',
+        active: Boolean(this.screen.swapEyes)
+      });
     }
 
-    if (this.ccBtnMesh && this.screen) {
-      let ccLabel = '💬 CC';
-      if (now < this.ccHintUntil) {
-        ccLabel = 'Load .SRT';
-      } else if (this.screen.subtitleCues && this.screen.subtitleCues.length > 0) {
-        ccLabel = this.screen.subtitlesEnabled ? '💬 CC On' : '💬 CC Off';
-      }
-      if (this.ccBtnMesh.userData.currentText !== ccLabel) {
-        this.updateButtonText(this.ccBtnMesh, ccLabel);
-      }
-    }
-
-    if (this.lensBtnMesh) {
-      const lensLabel = this.rig.distortionEnabled ? '🔍 Lens On' : '🔍 Lens Off';
-      if (this.lensBtnMesh.userData.currentText !== lensLabel) {
-        this.updateButtonText(this.lensBtnMesh, lensLabel);
-      }
+    if (this.bedBtnMesh && this.environments) {
+      const isBed = this.environments.currentEnv === 'bed';
+      this.updateButtonState(this.bedBtnMesh, {
+        label: isBed ? 'Bed On' : 'Bed Off',
+        active: isBed
+      });
     }
 
     if (this.brightBtnMesh) {
-      const brightLabel = `☀ ${Math.round(this.brightness * 100)}%`;
-      if (this.brightBtnMesh.userData.currentText !== brightLabel) {
-        this.updateButtonText(this.brightBtnMesh, brightLabel);
-      }
+      const pct = Math.round(this.brightness * 100);
+      this.updateButtonState(this.brightBtnMesh, {
+        label: pct === 100 ? '100% Bright' : `${pct}% Dim`,
+        active: pct < 100
+      });
     }
 
-    if (this.dwellBtnMesh) {
-      const dwellLabel = this.gazeDwellEnabled ? '⌛ Dwell 1.2s' : '⌛ Dwell Off';
-      if (this.dwellBtnMesh.userData.currentText !== dwellLabel) {
-        this.updateButtonText(this.dwellBtnMesh, dwellLabel);
-      }
+    if (this.ipdBtnMesh) {
+      this.updateButtonState(this.ipdBtnMesh, {
+        label: `IPD ${Math.round(this.rig.ipd * 1000)}mm`,
+        active: Math.abs(this.rig.ipd - 0.062) > 0.001
+      });
     }
 
     if (this.fovBtnMesh) {
-      const fovLabel = `🔭 FOV ${Math.round(this.rig.fov)}°`;
-      if (this.fovBtnMesh.userData.currentText !== fovLabel) {
-        this.updateButtonText(this.fovBtnMesh, fovLabel);
-      }
+      this.updateButtonState(this.fovBtnMesh, {
+        label: `FOV ${Math.round(this.rig.fov)}°`,
+        active: Math.round(this.rig.fov) !== 75
+      });
+    }
+
+    if (this.lensBtnMesh) {
+      this.updateButtonState(this.lensBtnMesh, {
+        label: this.rig.distortionEnabled ? 'Lens On' : 'Lens Off',
+        active: Boolean(this.rig.distortionEnabled)
+      });
+    }
+
+    if (this.dwellBtnMesh) {
+      this.updateButtonState(this.dwellBtnMesh, {
+        label: this.gazeDwellEnabled ? 'Dwell 1.2s' : 'Dwell Off',
+        active: Boolean(this.gazeDwellEnabled)
+      });
     }
   }
 
@@ -884,18 +1553,14 @@ export class GazeUI {
     const dtSec = Math.min(0.1, Math.max(0, (now - this.lastUpdateTime) / 1000));
     this.lastUpdateTime = now;
 
-    // Poll Bluetooth / USB Gamepad inputs
     this.pollGamepad(dtSec);
 
-    // Update active subtitles cue
     if (this.screen && this.screen.updateSubtitles) {
       this.screen.updateSubtitles();
     }
 
-    // Update dynamic button canvas labels
     this.updateDynamicLabels(now);
 
-    // Cast ray from cyclopean head center along forward (-Z) gaze axis
     this.rig.head.updateWorldMatrix(true, false);
     this._rayOrigin.setFromMatrixPosition(this.rig.head.matrixWorld);
     this._rayDir.set(0, 0, -1).transformDirection(this.rig.head.matrixWorld);
@@ -905,7 +1570,8 @@ export class GazeUI {
     this.hoverSeekRatio = null;
 
     if (this.isMenuVisible) {
-      const menuIntersects = this.raycaster.intersectObjects(this.interactiveObjects);
+      const activeObjects = this.isSettingsOpen ? this.settingsInteractiveObjects : this.mainInteractiveObjects;
+      const menuIntersects = this.raycaster.intersectObjects(activeObjects);
       if (menuIntersects.length > 0) {
         const firstHit = menuIntersects[0];
         const hitObj = firstHit.object;
@@ -915,27 +1581,14 @@ export class GazeUI {
           this.hoverSeekRatio = THREE.MathUtils.clamp(firstHit.uv.x, 0, 1);
         }
 
-        if (this.hoveredObject !== hitObj) {
-          if (this.hoveredObject) this.hoveredObject.scale.set(1, 1, 1);
-          this.hoveredObject = hitObj;
-          if (!this.hoveredObject.userData?.noHoverScale) {
-            this.hoveredObject.scale.set(1.08, 1.08, 1.08);
-          }
-        }
+        this.setHoveredObject(hitObj);
       } else {
-        if (this.hoveredObject) {
-          this.hoveredObject.scale.set(1, 1, 1);
-          this.hoveredObject = null;
-        }
+        this.setHoveredObject(null);
       }
     } else {
-      if (this.hoveredObject) {
-        this.hoveredObject.scale.set(1, 1, 1);
-        this.hoveredObject = null;
-      }
+      this.setHoveredObject(null);
     }
 
-    // If not hovering over a UI item, test ray against cinema screen meshL
     if (!this.hoveredObject && this.screen && this.screen.meshL) {
       const screenIntersects = this.raycaster.intersectObject(this.screen.meshL);
       if (screenIntersects.length > 0) {
@@ -943,11 +1596,9 @@ export class GazeUI {
       }
     }
 
-    // Update hands-free Gaze Dwell ring & click trigger
     this.updateGazeDwell(now);
 
-    // Redraw seek bar & time badge only when visible values change
-    if (this.isMenuVisible && this.video) {
+    if (this.isMenuVisible && !this.isSettingsOpen && this.video) {
       const dur = Number.isFinite(this.video.duration) && this.video.duration > 0 ? this.video.duration : 0;
       const cur = Number.isFinite(this.video.currentTime) ? this.video.currentTime : 0;
       const ratio = dur > 0 ? cur / dur : 0;
@@ -967,12 +1618,10 @@ export class GazeUI {
       }
     }
 
-    // Place reticle & dwell ring at hit distance slightly forward to avoid z-fighting and diplopia
     const depthZ = -targetDistance + 0.04;
     this.reticle.position.z = depthZ;
     this.dwellRing.position.z = depthZ + 0.001;
 
-    // Scale reticle proportionally with distance to maintain optimal gaze reticle size
     const baseScale = targetDistance / 1.8;
     const hoverScale = this.hoveredObject && !this.hoveredObject.userData?.noHoverScale ? 1.35 : 1.0;
     const finalScale = baseScale * hoverScale;

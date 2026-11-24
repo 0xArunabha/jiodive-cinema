@@ -2,9 +2,9 @@ import * as THREE from 'three';
 import { getActiveCueText } from './subtitleParser.js';
 
 export const SCREEN_PRESETS = {
-  imax: { distance: 5.2, curveDeg: 82, stageClearanceY: 0.68, label: '🏟 IMAX' },
-  standard: { distance: 6.5, curveDeg: 64, stageClearanceY: 0.55, label: '📐 Standard' },
-  balcony: { distance: 7.45, curveDeg: 44, stageClearanceY: 0.80, label: '🪑 Balcony' }
+  imax: { distance: 5.2, curveDeg: 82, stageClearanceY: 0.68, label: 'IMAX' },
+  standard: { distance: 6.5, curveDeg: 64, stageClearanceY: 0.55, label: 'Standard' },
+  balcony: { distance: 7.45, curveDeg: 44, stageClearanceY: 0.80, label: 'Balcony' }
 };
 
 /**
@@ -29,10 +29,10 @@ export class CinemaScreen {
     this.format = '2d'; // '2d', '3d-hsbs', '3d-fsbs', '3d-hou', '3d-fou'
     this.swapEyes = false;
 
-    // Standby canvas texture (shown before video starts or while loading)
+    // Standby canvas texture (shown before video starts or while connecting)
     this.standbyTexture = this.createCanvasTexture(
-      '🥽 JioDive VR Cinema',
-      'Select a movie or tap anywhere to start playback'
+      'JioDive VR Cinema',
+      'Loading stream or tap anywhere to begin playback'
     );
 
     // Primary Video Texture (shared by both eyes in 2D mode to cut GPU texture uploads in half!)
@@ -71,26 +71,67 @@ export class CinemaScreen {
     canvas.height = 720;
     const ctx = canvas.getContext('2d');
 
-    const grad = ctx.createLinearGradient(0, 0, 1280, 720);
-    grad.addColorStop(0, '#0c0f1d');
-    grad.addColorStop(0.5, '#1e243d');
-    grad.addColorStop(1, '#0c0f1d');
+    const grad = ctx.createRadialGradient(640, 260, 40, 640, 360, 760);
+    grad.addColorStop(0, '#171d3d');
+    grad.addColorStop(0.55, '#0b0e1e');
+    grad.addColorStop(1, '#070812');
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, 1280, 720);
 
-    ctx.strokeStyle = '#6366f1';
-    ctx.lineWidth = 8;
-    ctx.strokeRect(20, 20, 1240, 680);
+    // Crisp outer cinema hairline border
+    ctx.strokeStyle = 'rgba(148, 163, 184, 0.22)';
+    ctx.lineWidth = 4;
+    ctx.strokeRect(24, 24, 1232, 672);
 
-    ctx.fillStyle = '#ffffff';
-    ctx.font = 'bold 54px -apple-system, BlinkMacSystemFont, sans-serif';
+    // Subtle horizon glow arc matching JioDive crest
+    const arcGrad = ctx.createLinearGradient(440, 180, 840, 180);
+    arcGrad.addColorStop(0, 'rgba(56, 189, 248, 0)');
+    arcGrad.addColorStop(0.5, 'rgba(199, 210, 254, 0.9)');
+    arcGrad.addColorStop(1, 'rgba(99, 102, 241, 0)');
+    ctx.strokeStyle = arcGrad;
+    ctx.lineWidth = 4;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(460, 204);
+    ctx.quadraticCurveTo(640, 168, 820, 204);
+    ctx.stroke();
+
+    // Vector dual-lens emblem
+    const emblemGrad = ctx.createLinearGradient(576, 224, 704, 304);
+    emblemGrad.addColorStop(0, '#38bdf8');
+    emblemGrad.addColorStop(1, '#6366f1');
+    ctx.strokeStyle = emblemGrad;
+    ctx.lineWidth = 5;
+    ctx.fillStyle = '#11152c';
+    ctx.beginPath();
+    if (ctx.roundRect) {
+      ctx.roundRect(574, 224, 132, 72, 20);
+    } else {
+      ctx.rect(574, 224, 132, 72);
+    }
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.fillStyle = '#38bdf8';
+    ctx.beginPath();
+    if (ctx.roundRect) {
+      ctx.roundRect(592, 240, 40, 38, 10);
+      ctx.roundRect(648, 240, 40, 38, 10);
+    } else {
+      ctx.rect(592, 240, 40, 38);
+      ctx.rect(648, 240, 40, 38);
+    }
+    ctx.fill();
+
+    ctx.fillStyle = '#f8fafc';
+    ctx.font = 'bold 52px -apple-system, BlinkMacSystemFont, sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText(title, 640, 320);
+    ctx.fillText(title, 640, 368);
 
-    ctx.fillStyle = '#a5b4fc';
-    ctx.font = '28px -apple-system, BlinkMacSystemFont, sans-serif';
-    ctx.fillText(subtitle, 640, 410);
+    ctx.fillStyle = '#94a3b8';
+    ctx.font = '26px -apple-system, BlinkMacSystemFont, sans-serif';
+    ctx.fillText(subtitle, 640, 434);
 
     const texture = new THREE.CanvasTexture(canvas);
     texture.colorSpace = THREE.SRGBColorSpace;
@@ -103,26 +144,43 @@ export class CinemaScreen {
     canvas.height = 720;
     const ctx = canvas.getContext('2d');
 
-    ctx.fillStyle = '#1a0d10';
+    ctx.fillStyle = '#13090e';
     ctx.fillRect(0, 0, 1280, 720);
 
-    ctx.strokeStyle = '#ef4444';
-    ctx.lineWidth = 8;
-    ctx.strokeRect(20, 20, 1240, 680);
+    ctx.strokeStyle = 'rgba(248, 113, 113, 0.55)';
+    ctx.lineWidth = 5;
+    ctx.strokeRect(24, 24, 1232, 672);
+
+    // Crisp vector warning triangle (no OS emoji)
+    ctx.strokeStyle = '#f87171';
+    ctx.lineWidth = 6;
+    ctx.lineJoin = 'round';
+    ctx.beginPath();
+    ctx.moveTo(640, 195);
+    ctx.lineTo(686, 275);
+    ctx.lineTo(594, 275);
+    ctx.closePath();
+    ctx.stroke();
 
     ctx.fillStyle = '#f87171';
-    ctx.font = 'bold 50px -apple-system, BlinkMacSystemFont, sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText('⚠️ Playback Error', 640, 280);
+    ctx.fillRect(637, 222, 6, 26);
+    ctx.beginPath();
+    ctx.arc(640, 261, 4, 0, Math.PI * 2);
+    ctx.fill();
 
     ctx.fillStyle = '#fca5a5';
-    ctx.font = '26px -apple-system, BlinkMacSystemFont, sans-serif';
-    ctx.fillText(errorMessage, 640, 370);
+    ctx.font = 'bold 46px -apple-system, BlinkMacSystemFont, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('Playback Error', 640, 336);
 
-    ctx.fillStyle = '#e2e8f0';
+    ctx.fillStyle = '#fecaca';
+    ctx.font = '26px -apple-system, BlinkMacSystemFont, sans-serif';
+    ctx.fillText(errorMessage, 640, 405);
+
+    ctx.fillStyle = '#cbd5e1';
     ctx.font = '22px -apple-system, BlinkMacSystemFont, sans-serif';
-    ctx.fillText('Convert this file to MP4 (H.264 + AAC) or WebM for browser playback.', 640, 430);
+    ctx.fillText('Convert this file to MP4 (H.264 + AAC) or WebM for browser playback.', 640, 464);
 
     const errTex = new THREE.CanvasTexture(canvas);
     errTex.colorSpace = THREE.SRGBColorSpace;
