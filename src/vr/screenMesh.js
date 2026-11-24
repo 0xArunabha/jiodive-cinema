@@ -3,6 +3,7 @@ import * as THREE from 'three';
 /**
  * Curved Virtual Cinema Screen Mesh
  * Supports 2D, 3D Half-SBS, 3D Full-SBS, 3D Half-OU, and 3D Full-OU video playback.
+ * Highly optimized: shares a single VideoTexture in 2D mode and avoids redundant per-frame GPU re-uploads.
  */
 export class CinemaScreen {
   constructor(scene, videoElement) {
@@ -26,16 +27,14 @@ export class CinemaScreen {
       'Select a movie or tap anywhere to start playback'
     );
 
-    // Create Video Textures
+    // Primary Video Texture (shared by both eyes in 2D mode to cut GPU texture uploads in half!)
     this.videoTextureL = new THREE.VideoTexture(this.video);
     this.videoTextureL.minFilter = THREE.LinearFilter;
     this.videoTextureL.magFilter = THREE.LinearFilter;
     this.videoTextureL.colorSpace = THREE.SRGBColorSpace;
 
-    this.videoTextureR = new THREE.VideoTexture(this.video);
-    this.videoTextureR.minFilter = THREE.LinearFilter;
-    this.videoTextureR.magFilter = THREE.LinearFilter;
-    this.videoTextureR.colorSpace = THREE.SRGBColorSpace;
+    // Secondary texture for Right Eye in 3D modes only (instantiated on demand)
+    this.videoTextureR = null;
 
     // Root screen container placed at eye height Y = 1.4 (rotation pivot for Bed Mode)
     this.container = new THREE.Group();
@@ -137,9 +136,9 @@ export class CinemaScreen {
       side: THREE.DoubleSide
     });
 
-    // Right Eye Material
+    // Right Eye Material (in 2D shares initialMap!)
     this.materialR = new THREE.MeshBasicMaterial({
-      map: (this.video && this.video.readyState >= 2) ? this.videoTextureR : this.standbyTexture,
+      map: initialMap,
       side: THREE.DoubleSide
     });
 
@@ -171,16 +170,18 @@ export class CinemaScreen {
 
   initVideoListeners() {
     const switchToVideo = () => {
+      const is3D = (this.format !== '2d');
       if (this.materialL.map !== this.videoTextureL) {
         this.materialL.map = this.videoTextureL;
         this.materialL.needsUpdate = true;
       }
-      if (this.materialR.map !== this.videoTextureR) {
-        this.materialR.map = this.videoTextureR;
+      const targetR = is3D ? (this.videoTextureR || this.videoTextureL) : this.videoTextureL;
+      if (this.materialR.map !== targetR) {
+        this.materialR.map = targetR;
         this.materialR.needsUpdate = true;
       }
       this.videoTextureL.needsUpdate = true;
-      this.videoTextureR.needsUpdate = true;
+      if (this.videoTextureR) this.videoTextureR.needsUpdate = true;
     };
 
     this.video.addEventListener('loadedmetadata', () => {
@@ -195,7 +196,6 @@ export class CinemaScreen {
     this.video.addEventListener('canplay', switchToVideo);
     this.video.addEventListener('playing', switchToVideo);
     this.video.addEventListener('seeked', switchToVideo);
-    this.video.addEventListener('timeupdate', switchToVideo);
 
     this.video.addEventListener('error', () => {
       const err = this.video.error;
@@ -280,46 +280,57 @@ export class CinemaScreen {
    */
   setFormat(format) {
     this.format = format;
+    const is3D = (format !== '2d');
 
-    if (format === '3d-hsbs' || format === '3d-fsbs' || format === '3d-sbs') {
-      // Left eye sees left half: UV [0.0, 0.5]
-      this.videoTextureL.repeat.set(0.5, 1);
-      this.videoTextureL.offset.set(0, 0);
+    if (is3D) {
+      // Create secondary right eye texture on-demand if needed
+      if (!this.videoTextureR) {
+        this.videoTextureR = new THREE.VideoTexture(this.video);
+        this.videoTextureR.minFilter = THREE.LinearFilter;
+        this.videoTextureR.magFilter = THREE.LinearFilter;
+        this.videoTextureR.colorSpace = THREE.SRGBColorSpace;
+      }
 
-      // Right eye sees right half: UV [0.5, 1.0]
-      this.videoTextureR.repeat.set(0.5, 1);
-      this.videoTextureR.offset.set(0.5, 0);
-    } else if (format === '3d-hou' || format === '3d-fou' || format === '3d-ou') {
-      // Left eye sees top half
-      this.videoTextureL.repeat.set(1, 0.5);
-      this.videoTextureL.offset.set(0, 0.5);
+      if (format === '3d-hsbs' || format === '3d-fsbs' || format === '3d-sbs') {
+        // Left eye sees left half: UV [0.0, 0.5]
+        this.videoTextureL.repeat.set(0.5, 1);
+        this.videoTextureL.offset.set(0, 0);
 
-      // Right eye sees bottom half
-      this.videoTextureR.repeat.set(1, 0.5);
-      this.videoTextureR.offset.set(0, 0);
+        // Right eye sees right half: UV [0.5, 1.0]
+        this.videoTextureR.repeat.set(0.5, 1);
+        this.videoTextureR.offset.set(0.5, 0);
+      } else if (format === '3d-hou' || format === '3d-fou' || format === '3d-ou') {
+        // Left eye sees top half
+        this.videoTextureL.repeat.set(1, 0.5);
+        this.videoTextureL.offset.set(0, 0.5);
+
+        // Right eye sees bottom half
+        this.videoTextureR.repeat.set(1, 0.5);
+        this.videoTextureR.offset.set(0, 0);
+      }
+
+      if (this.materialL.map !== this.standbyTexture) {
+        this.materialL.map = this.videoTextureL;
+        this.materialR.map = this.videoTextureR;
+        this.materialL.needsUpdate = true;
+        this.materialR.needsUpdate = true;
+      }
     } else {
-      // Standard 2D
+      // 2D Mode: Shared single texture for both eyes (50% GPU upload saving!)
       this.videoTextureL.repeat.set(1, 1);
       this.videoTextureL.offset.set(0, 0);
 
-      this.videoTextureR.repeat.set(1, 1);
-      this.videoTextureR.offset.set(0, 0);
+      if (this.materialL.map !== this.standbyTexture) {
+        this.materialL.map = this.videoTextureL;
+        this.materialR.map = this.videoTextureL; // Shared!
+        this.materialL.needsUpdate = true;
+        this.materialR.needsUpdate = true;
+      }
     }
 
     this.videoTextureL.needsUpdate = true;
-    this.videoTextureR.needsUpdate = true;
+    if (this.videoTextureR) this.videoTextureR.needsUpdate = true;
     this.updateAspectRatio();
-  }
-
-  /**
-   * Continuous per-frame check: Ensures texture updates even if
-   * requestVideoFrameCallback was skipped or throttled by browser.
-   */
-  update() {
-    if (this.video && !this.video.paused && this.video.readyState >= this.video.HAVE_CURRENT_DATA) {
-      this.videoTextureL.needsUpdate = true;
-      this.videoTextureR.needsUpdate = true;
-    }
   }
 
   /**

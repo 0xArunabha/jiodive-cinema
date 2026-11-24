@@ -2,14 +2,14 @@ import * as THREE from 'three';
 
 /**
  * 3D Virtual Cinema Environments
- * Features an architecturally authentic luxury IMAX/Dolby-style theater:
+ * High-performance mobile-optimized IMAX/Dolby-style theater:
+ * - Ultra-efficient MeshLambertMaterial & MeshBasicMaterial (eliminates heavy PBR GPU overhead)
+ * - Baked additive sconce wall lighting (eliminates 6 heavy dynamic point lights)
  * - Tiered riser platforms with amber LED step lighting
- * - Luxury leather VIP recliner seating with armrests & cup holders
- * - Acoustic timber-slat wall paneling with procedural fabric & wood grain
- * - Architectural wall sconces with warm up/down illumination
- * - Subtle volumetric cinema projector beam from the back booth
+ * - Luxury leather VIP recliner seating with armrests & cup holders (InstancedMesh)
  * - Front screen stage platform with perimeter edge lighting
- * - Authentic illuminated emergency EXIT sign in the rear
+ * - Rear projector booth window & atmospheric light beam
+ * - Illuminated emergency EXIT sign
  */
 export class Environments {
   constructor(scene) {
@@ -25,6 +25,7 @@ export class Environments {
     this.frontCurtainTexture = this.createFrontCurtainTexture();
     this.ceilingTexture = this.createCeilingTexture();
     this.exitSignTexture = this.createExitSignTexture();
+    this.sconceGlowTexture = this.createSconceGlowTexture();
 
     this.buildCinemaHall();
   }
@@ -37,11 +38,9 @@ export class Environments {
     canvas.height = 512;
     const ctx = canvas.getContext('2d');
 
-    // Dark charcoal-navy base
     ctx.fillStyle = '#0f111a';
     ctx.fillRect(0, 0, 512, 512);
 
-    // Subtle theater diamond pattern
     ctx.strokeStyle = '#1b1f2e';
     ctx.lineWidth = 3;
 
@@ -56,7 +55,6 @@ export class Environments {
         ctx.closePath();
         ctx.stroke();
 
-        // Subtle burgundy & gold center flecks
         ctx.fillStyle = (x + y) % 128 === 0 ? '#38141e' : '#141826';
         ctx.fillRect(x + size / 2 - 4, y + size / 2 - 4, 8, 8);
       }
@@ -75,15 +73,12 @@ export class Environments {
     canvas.height = 512;
     const ctx = canvas.getContext('2d');
 
-    // Acoustic dark felt backdrop
     ctx.fillStyle = '#0a0b12';
     ctx.fillRect(0, 0, 512, 512);
 
-    // Vertical acoustic timber slats
     const slatWidth = 16;
     const gap = 16;
     for (let x = 0; x < 512; x += slatWidth + gap) {
-      // Wood gradient
       const grad = ctx.createLinearGradient(x, 0, x + slatWidth, 0);
       grad.addColorStop(0, '#1c1512');
       grad.addColorStop(0.3, '#2a1f18');
@@ -93,11 +88,9 @@ export class Environments {
       ctx.fillStyle = grad;
       ctx.fillRect(x, 0, slatWidth, 512);
 
-      // Subtle warm highlight on the left edge
       ctx.fillStyle = 'rgba(255, 200, 150, 0.08)';
       ctx.fillRect(x, 0, 2, 512);
 
-      // Shadow in the gap
       ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
       ctx.fillRect(x + slatWidth, 0, gap, 512);
     }
@@ -118,7 +111,6 @@ export class Environments {
     ctx.fillStyle = '#06070a';
     ctx.fillRect(0, 0, 512, 512);
 
-    // Soft vertical velvet folds
     const foldWidth = 32;
     for (let x = 0; x < 512; x += foldWidth) {
       const grad = ctx.createLinearGradient(x, 0, x + foldWidth, 0);
@@ -145,7 +137,6 @@ export class Environments {
     ctx.fillStyle = '#08090f';
     ctx.fillRect(0, 0, 512, 512);
 
-    // Grid coffered ceiling tiles
     ctx.strokeStyle = '#12141f';
     ctx.lineWidth = 8;
     ctx.strokeRect(4, 4, 504, 504);
@@ -167,16 +158,13 @@ export class Environments {
     canvas.height = 128;
     const ctx = canvas.getContext('2d');
 
-    // Green emergency sign background
     ctx.fillStyle = '#065f46';
     ctx.fillRect(0, 0, 256, 128);
 
-    // Glowing border
     ctx.strokeStyle = '#34d399';
     ctx.lineWidth = 6;
     ctx.strokeRect(6, 6, 244, 116);
 
-    // White bold text
     ctx.fillStyle = '#ffffff';
     ctx.font = 'bold 52px -apple-system, sans-serif';
     ctx.textAlign = 'center';
@@ -185,6 +173,26 @@ export class Environments {
 
     const texture = new THREE.CanvasTexture(canvas);
     texture.colorSpace = THREE.SRGBColorSpace;
+    return texture;
+  }
+
+  createSconceGlowTexture() {
+    const canvas = document.createElement('canvas');
+    canvas.width = 128;
+    canvas.height = 512;
+    const ctx = canvas.getContext('2d');
+
+    // Smooth architectural up/down light flare on the wall
+    const grad = ctx.createRadialGradient(64, 256, 8, 64, 256, 240);
+    grad.addColorStop(0, 'rgba(255, 175, 75, 0.55)');
+    grad.addColorStop(0.25, 'rgba(255, 140, 50, 0.28)');
+    grad.addColorStop(0.65, 'rgba(255, 100, 30, 0.08)');
+    grad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, 128, 512);
+
+    const texture = new THREE.CanvasTexture(canvas);
     return texture;
   }
 
@@ -206,7 +214,7 @@ export class Environments {
     // 5. Luxury VIP Recliner Seats
     this.buildTieredSeats();
 
-    // 6. Wall Sconces & Architectural Lighting
+    // 6. Wall Sconces & Baked Light Washes
     this.buildWallSconces();
 
     // 7. Projector Booth Window & Volumetric Beam
@@ -217,10 +225,9 @@ export class Environments {
   }
 
   buildTieredFloor() {
-    const carpetMat = new THREE.MeshStandardMaterial({
-      map: this.carpetTexture,
-      roughness: 0.85,
-      metalness: 0.05
+    // Lightweight Lambert material for floor
+    const carpetMat = new THREE.MeshLambertMaterial({
+      map: this.carpetTexture
     });
     this.carpetTexture.repeat.set(12, 18);
 
@@ -243,7 +250,6 @@ export class Environments {
 
       const riserGeom = new THREE.BoxGeometry(width, height, depth);
       const riserMesh = new THREE.Mesh(riserGeom, carpetMat);
-      // Position riser so its top surface is at Y = height
       riserMesh.position.set(0, height / 2, zPos);
       this.cinemaGroup.add(riserMesh);
 
@@ -256,10 +262,9 @@ export class Environments {
   }
 
   buildWalls() {
-    const wallMat = new THREE.MeshStandardMaterial({
-      map: this.wallTexture,
-      roughness: 0.75,
-      metalness: 0.1
+    // Lightweight Lambert materials for walls
+    const wallMat = new THREE.MeshLambertMaterial({
+      map: this.wallTexture
     });
     this.wallTexture.repeat.set(18, 1);
 
@@ -278,9 +283,8 @@ export class Environments {
     this.cinemaGroup.add(rightWall);
 
     // Back Wall
-    const backWallMat = new THREE.MeshStandardMaterial({
-      color: 0x0c0e18,
-      roughness: 0.85
+    const backWallMat = new THREE.MeshLambertMaterial({
+      color: 0x0c0e18
     });
     const backWallGeom = new THREE.PlaneGeometry(20, 9.5);
     const backWall = new THREE.Mesh(backWallGeom, backWallMat);
@@ -289,10 +293,8 @@ export class Environments {
     this.cinemaGroup.add(backWall);
 
     // Front Wall (Behind Screen with Velvet Acoustic Drapes)
-    const frontWallMat = new THREE.MeshStandardMaterial({
-      map: this.frontCurtainTexture,
-      roughness: 0.95,
-      metalness: 0.0
+    const frontWallMat = new THREE.MeshLambertMaterial({
+      map: this.frontCurtainTexture
     });
     this.frontCurtainTexture.repeat.set(24, 1);
     const frontWallGeom = new THREE.PlaneGeometry(20, 9.5);
@@ -302,10 +304,8 @@ export class Environments {
   }
 
   buildCeiling() {
-    const ceilingMat = new THREE.MeshStandardMaterial({
-      map: this.ceilingTexture,
-      roughness: 0.8,
-      metalness: 0.15
+    const ceilingMat = new THREE.MeshLambertMaterial({
+      map: this.ceilingTexture
     });
     this.ceilingTexture.repeat.set(8, 12);
 
@@ -316,7 +316,7 @@ export class Environments {
     this.cinemaGroup.add(ceiling);
 
     // Recessed Dark Architectural Beams
-    const beamMat = new THREE.MeshStandardMaterial({ color: 0x06070a, roughness: 0.5 });
+    const beamMat = new THREE.MeshLambertMaterial({ color: 0x06070a });
     for (let z = -6; z <= 12; z += 4.5) {
       const beamGeom = new THREE.BoxGeometry(20, 0.35, 0.4);
       const beam = new THREE.Mesh(beamGeom, beamMat);
@@ -326,10 +326,8 @@ export class Environments {
   }
 
   buildFrontStage() {
-    // Curved/Beveled Low Stage below screen
-    const stageMat = new THREE.MeshStandardMaterial({
-      color: 0x090a10,
-      roughness: 0.9
+    const stageMat = new THREE.MeshLambertMaterial({
+      color: 0x090a10
     });
 
     const stageGeom = new THREE.BoxGeometry(14, 0.4, 3.0);
@@ -346,36 +344,27 @@ export class Environments {
   }
 
   buildTieredSeats() {
-    // Luxury VIP Recliner Chair Components
     const seatBottomGeom = new THREE.BoxGeometry(0.64, 0.16, 0.6);
     const seatBackGeom = new THREE.BoxGeometry(0.64, 0.72, 0.16);
     const headrestGeom = new THREE.BoxGeometry(0.48, 0.24, 0.14);
     const armrestGeom = new THREE.BoxGeometry(0.12, 0.45, 0.55);
     const cupHolderGeom = new THREE.CylinderGeometry(0.045, 0.04, 0.08, 16);
 
-    // VIP Burgundy Leather Material with subtle specular sheen
-    const seatMat = new THREE.MeshStandardMaterial({
-      color: 0x5a141e,
-      roughness: 0.55,
-      metalness: 0.1
+    // Lightweight Lambert materials for seats (drastically faster than PBR)
+    const seatMat = new THREE.MeshLambertMaterial({
+      color: 0x5a141e
     });
 
-    // Dark Matte Charcoal Armrests
-    const armrestMat = new THREE.MeshStandardMaterial({
-      color: 0x14161e,
-      roughness: 0.6,
-      metalness: 0.2
+    const armrestMat = new THREE.MeshLambertMaterial({
+      color: 0x14161e
     });
 
-    // Silver Brushed Chrome for Cup Holders
-    const metalMat = new THREE.MeshStandardMaterial({
-      color: 0x94a3b8,
-      roughness: 0.3,
-      metalness: 0.8
+    const metalMat = new THREE.MeshLambertMaterial({
+      color: 0x94a3b8
     });
 
     const rows = 6;
-    const seatsPerRow = 8; // 4 Left Block, Center Aisle, 4 Right Block
+    const seatsPerRow = 8;
     const totalSeats = rows * seatsPerRow;
 
     const bottomMesh = new THREE.InstancedMesh(seatBottomGeom, seatMat, totalSeats);
@@ -394,12 +383,10 @@ export class Environments {
       const tierHeight = 0.35 + r * 0.35;
 
       for (let s = 0; s < seatsPerRow; s++) {
-        // Skip user's immediate seat in Row 1 (center left seat s=3) so view is completely open
         if (r === 1 && (s === 3 || s === 4)) {
           continue;
         }
 
-        // Center aisle gap (1.6m wide) between seats 3 and 4
         const isLeftBlock = s < 4;
         const xOffset = isLeftBlock ? (s - 3.5) * 0.82 - 0.45 : (s - 4) * 0.82 + 0.85;
 
@@ -433,7 +420,7 @@ export class Environments {
         dummy.updateMatrix();
         armrestRMesh.setMatrixAt(seatIndex, dummy.matrix);
 
-        // 6. Silver Cup Holders (on front of each armrest)
+        // 6. Silver Cup Holders
         dummy.position.set(xOffset - 0.34, tierHeight + 0.64, zPos - 0.14);
         dummy.rotation.set(0, 0, 0);
         dummy.updateMatrix();
@@ -480,17 +467,27 @@ export class Environments {
       { x: 9.85, z: 7 }
     ];
 
-    const fixtureMat = new THREE.MeshStandardMaterial({ color: 0x181a24, roughness: 0.4, metalness: 0.8 });
+    const fixtureMat = new THREE.MeshLambertMaterial({ color: 0x181a24 });
     const lensMat = new THREE.MeshBasicMaterial({ color: 0xffb355 });
 
+    // Baked Sconce Light Wash Material (Additive, zero dynamic light overhead!)
+    const glowMat = new THREE.MeshBasicMaterial({
+      map: this.sconceGlowTexture,
+      transparent: true,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false
+    });
+
     sconcePositions.forEach((pos) => {
-      // Modern vertical sconce fixture
+      const isLeft = pos.x < 0;
+
+      // 1. Modern vertical sconce fixture
       const fixtureGeom = new THREE.BoxGeometry(0.12, 0.7, 0.18);
       const fixture = new THREE.Mesh(fixtureGeom, fixtureMat);
       fixture.position.set(pos.x, 4.2, pos.z);
       this.cinemaGroup.add(fixture);
 
-      // Top and bottom glowing light lenses
+      // 2. Top and bottom glowing light lenses
       const lensTop = new THREE.Mesh(new THREE.BoxGeometry(0.13, 0.08, 0.16), lensMat);
       lensTop.position.set(pos.x, 4.56, pos.z);
       this.cinemaGroup.add(lensTop);
@@ -499,21 +496,21 @@ export class Environments {
       lensBottom.position.set(pos.x, 3.84, pos.z);
       this.cinemaGroup.add(lensBottom);
 
-      // Subtle warm local point light
-      const sconceLight = new THREE.PointLight(0xff9944, 0.65, 7.5, 2);
-      sconceLight.position.set(pos.x * 0.95, 4.2, pos.z);
-      this.cinemaGroup.add(sconceLight);
+      // 3. Baked vertical light wash against the acoustic wall (replaces heavy PointLight!)
+      const washGeom = new THREE.PlaneGeometry(1.4, 4.2);
+      const washMesh = new THREE.Mesh(washGeom, glowMat);
+      washMesh.position.set(isLeft ? -9.94 : 9.94, 4.2, pos.z);
+      washMesh.rotation.y = isLeft ? Math.PI / 2 : -Math.PI / 2;
+      this.cinemaGroup.add(washMesh);
     });
   }
 
   buildProjectorBooth() {
-    // Projector window on rear wall
-    const windowFrameMat = new THREE.MeshStandardMaterial({ color: 0x11131c, roughness: 0.5 });
+    const windowFrameMat = new THREE.MeshLambertMaterial({ color: 0x11131c });
     const frame = new THREE.Mesh(new THREE.BoxGeometry(2.4, 1.2, 0.2), windowFrameMat);
     frame.position.set(0, 6.2, 13.9);
     this.cinemaGroup.add(frame);
 
-    // Tinted glowing projector glass aperture
     const glassMat = new THREE.MeshBasicMaterial({ color: 0x7dd3fc, transparent: true, opacity: 0.85 });
     const glass = new THREE.Mesh(new THREE.PlaneGeometry(1.8, 0.8), glassMat);
     glass.position.set(0, 6.2, 13.88);
@@ -521,11 +518,11 @@ export class Environments {
     this.cinemaGroup.add(glass);
 
     // Subtle atmospheric projector light beam cutting across theater
-    const beamGeom = new THREE.ConeGeometry(3.6, 20, 32, 1, true);
+    const beamGeom = new THREE.ConeGeometry(3.6, 20, 24, 1, true);
     const beamMat = new THREE.MeshBasicMaterial({
       color: 0x93c5fd,
       transparent: true,
-      opacity: 0.022,
+      opacity: 0.02,
       depthWrite: false,
       blending: THREE.AdditiveBlending,
       side: THREE.DoubleSide
@@ -543,15 +540,9 @@ export class Environments {
     });
     const signGeom = new THREE.PlaneGeometry(0.9, 0.45);
     const signMesh = new THREE.Mesh(signGeom, exitSignMat);
-    // Position above back-right exit door
     signMesh.position.set(8.2, 3.2, 13.9);
     signMesh.rotation.y = Math.PI;
     this.cinemaGroup.add(signMesh);
-
-    // Subtle green emergency glow
-    const exitLight = new THREE.PointLight(0x10b981, 0.4, 4);
-    exitLight.position.set(8.2, 3.2, 13.7);
-    this.cinemaGroup.add(exitLight);
   }
 
   setEnvironment(envName, cinemaScreen, gazeUI) {

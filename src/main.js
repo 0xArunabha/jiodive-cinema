@@ -34,8 +34,8 @@ renderer.setSize(window.innerWidth, window.innerHeight);
 // Initialize VR Modules
 const rig = new StereoRig(renderer, scene);
 const cinemaScreen = new CinemaScreen(scene, video);
-const ambient = new AmbientLighting(scene, video);
 const environments = new Environments(scene);
+const ambient = new AmbientLighting(scene, video, environments);
 const gazeUI = new GazeUI(rig, video, cinemaScreen, environments);
 
 let wakeLock = null;
@@ -207,9 +207,13 @@ btnEnterVr.addEventListener('click', async () => {
 function animate(time) {
   requestAnimationFrame(animate);
 
-  // Update VR modules
+  // Performance Optimization: Skip 100% of 3D rendering while 2D launcher is visible
+  if (!rig.isVrActive) {
+    return;
+  }
+
+  // Update VR modules (VideoTexture updates automatically per decoded video frame)
   rig.update();
-  cinemaScreen.update();
   ambient.update(time);
   gazeUI.update();
 

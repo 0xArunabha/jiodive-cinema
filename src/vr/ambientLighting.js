@@ -4,11 +4,13 @@ import * as THREE from 'three';
  * Real-time Ambient Screen Lighting
  * Samples the video texture color and projects a realistic theater glow
  * onto surrounding seats, walls, and floor.
+ * Performance-optimized: completely skips CPU canvas sampling when in Void or Bed modes.
  */
 export class AmbientLighting {
-  constructor(scene, videoElement) {
+  constructor(scene, videoElement, environments) {
     this.scene = scene;
     this.video = videoElement;
+    this.environments = environments;
 
     // Offscreen canvas for fast video color sampling
     this.sampleCanvas = document.createElement('canvas');
@@ -16,12 +18,12 @@ export class AmbientLighting {
     this.sampleCanvas.height = 9;
     this.sampleCtx = this.sampleCanvas.getContext('2d', { willReadFrequently: true });
 
-    // Theater bounce lights
+    // Single dynamic theater bounce light
     this.screenLight = new THREE.PointLight(0xffffff, 1.4, 20, 1.5);
     this.screenLight.position.set(0, 3.0, -5.5);
     this.scene.add(this.screenLight);
 
-    // Rich ambient light so theater architecture and seats are visible
+    // Subtle fill ambient light
     this.ambientBase = new THREE.AmbientLight(0x22263a, 1.2);
     this.scene.add(this.ambientBase);
 
@@ -31,8 +33,20 @@ export class AmbientLighting {
   }
 
   update(time) {
-    // Sample at ~15fps to conserve mobile battery while remaining smooth
-    if (time - this.lastSampleTime > 66) {
+    // Optimization: Skip 100% of canvas sampling and disable dynamic light in Void and Bed modes
+    if (this.environments && this.environments.currentEnv !== 'cinema') {
+      if (this.screenLight.intensity !== 0) {
+        this.screenLight.intensity = 0;
+      }
+      return;
+    }
+
+    if (!this.video || this.video.paused || this.video.ended || !this.video.videoWidth) {
+      return;
+    }
+
+    // Sample at ~12fps (every 85ms) to conserve mobile battery while remaining smooth
+    if (time - this.lastSampleTime > 85) {
       this.lastSampleTime = time;
       this.sampleVideoColor();
     }
@@ -43,10 +57,6 @@ export class AmbientLighting {
   }
 
   sampleVideoColor() {
-    if (!this.video || this.video.paused || this.video.ended || !this.video.videoWidth) {
-      return;
-    }
-
     try {
       this.sampleCtx.drawImage(this.video, 0, 0, 16, 9);
       const imgData = this.sampleCtx.getImageData(0, 0, 16, 9).data;
