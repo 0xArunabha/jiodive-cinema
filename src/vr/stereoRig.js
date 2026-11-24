@@ -42,7 +42,7 @@ export class StereoRig {
     // Dual Cameras
     const aspect = (window.innerWidth / 2) / Math.max(1, window.innerHeight);
     const near = 0.1;
-    const far = 1000;
+    const far = 50;
 
     this.cameraL = new THREE.PerspectiveCamera(this.fov, aspect, near, far);
     this.cameraR = new THREE.PerspectiveCamera(this.fov, aspect, near, far);
@@ -79,6 +79,12 @@ export class StereoRig {
 
     // Bug 5 Fix: Ensure recenter works on iOS once first gyro event arrives
     this.needsRecenterOnFirstGyro = true;
+
+    // Pre-allocated temporaries for update() — avoids per-frame GC pressure
+    this._zee = new THREE.Vector3(0, 0, 1);
+    this._euler = new THREE.Euler();
+    this._q0 = new THREE.Quaternion();
+    this._q1 = new THREE.Quaternion(-Math.sqrt(0.5), 0, 0, Math.sqrt(0.5));
 
     // Recenter offset (yaw offset in radians)
     this.yawOffset = 0;
@@ -228,22 +234,17 @@ export class StereoRig {
     this.disposeDistortionTargets();
     const dpr = this.renderer.getPixelRatio();
     // Oversample each eye target (minimum 2.0x on 1x displays, up to 3.5x on high-DPR OLED phones, capped for VRAM safety)
-    const ssScale = Math.min(3.5, Math.max(2.0, dpr * 1.45));
+    const ssScale = Math.min(2.0, Math.max(1.5, dpr * 1.2));
     const maxDim = Math.min(2400, this.renderer.capabilities.maxTextureSize || 2048);
     const rtW = Math.min(maxDim, Math.max(1, Math.floor((window.innerWidth * ssScale) / 2)));
     const rtH = Math.min(maxDim, Math.max(1, Math.floor(window.innerHeight * ssScale)));
-    const canHalfFloat =
-      this.renderer.capabilities.isWebGL2 &&
-      (this.renderer.extensions.has('EXT_color_buffer_float') ||
-        this.renderer.extensions.has('EXT_color_buffer_half_float'));
-
     const opts = {
       minFilter: THREE.LinearFilter,
       magFilter: THREE.LinearFilter,
       generateMipmaps: false,
       format: THREE.RGBAFormat,
-      type: canHalfFloat ? THREE.HalfFloatType : THREE.UnsignedByteType,
-      samples: this.renderer.capabilities.isWebGL2 ? 4 : 0
+      type: THREE.UnsignedByteType,
+      samples: 0
     };
 
     this.rtL = new THREE.WebGLRenderTarget(rtW, rtH, opts);
@@ -395,16 +396,11 @@ export class StereoRig {
       const gamma = this.deviceOrientation.gamma;
       const orient = THREE.MathUtils.degToRad(this.screenOrientation);
 
-      // Cardboard gyroscope orientation calculation
-      const zee = new THREE.Vector3(0, 0, 1);
-      const euler = new THREE.Euler();
-      const q0 = new THREE.Quaternion();
-      const q1 = new THREE.Quaternion(-Math.sqrt(0.5), 0, 0, Math.sqrt(0.5)); // - PI/2 around X
-
-      euler.set(beta, alpha, -gamma, 'YXZ');
-      this.head.quaternion.setFromEuler(euler);
-      this.head.quaternion.multiply(q1);
-      this.head.quaternion.multiply(q0.setFromAxisAngle(zee, -orient));
+      // Cardboard gyroscope orientation calculation (reuses pre-allocated objects)
+      this._euler.set(beta, alpha, -gamma, 'YXZ');
+      this.head.quaternion.setFromEuler(this._euler);
+      this.head.quaternion.multiply(this._q1);
+      this.head.quaternion.multiply(this._q0.setFromAxisAngle(this._zee, -orient));
     } else {
       this.head.quaternion.setFromEuler(this.desktopEuler);
     }

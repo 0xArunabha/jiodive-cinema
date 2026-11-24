@@ -46,7 +46,7 @@ export class AmbientLighting {
     }
 
     // Sample at ~12fps (every 85ms) to conserve mobile battery while remaining smooth
-    if (time - this.lastSampleTime > 85) {
+    if (time - this.lastSampleTime > 150) {
       this.lastSampleTime = time;
       this.sampleVideoColor();
     }
