@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <meta name="theme-color" content="#0a0a0c" />
+  <title>JioDive VR Cinema</title>
+  <link rel="stylesheet" href="./src/style.css" />
+</head>
+<body>
+  <!-- 2D Launch / Control Screen before entering VR -->
+  <div id="launcher" class="launcher-overlay">
+    <div class="launcher-card">
+      <div class="header">
+        <div class="logo-badge">🥽 JioDive VR</div>
+        <h1>Virtual Cinema</h1>
+        <p class="subtitle">IMAX-style 3D theater player for your JioDive headset</p>
+      </div>
+
+      <!-- Video Selection Section -->
+      <div class="section">
+        <label class="section-title">Select Movie Source</label>
+        <div class="source-options">
+          <label class="file-picker-btn">
+            <span class="icon">📁</span>
+            <span>Choose Local Movie File</span>
+            <input type="file" id="video-file-input" accept="video/mp4,video/webm,video/ogg,video/quicktime,.mp4,.webm,.m4v,.mov,.mkv" />
+          </label>
+          <p class="format-hint">Recommended: <strong>MP4 (H.264 + AAC)</strong> or <strong>WebM</strong>. Browsers cannot play MKV containers natively.</p>
+          <div class="or-divider">OR</div>
+          <button id="btn-load-demo" class="secondary-btn">
+            <span class="icon">🎬</span>
+            <span>Load Demo Movie (Big Buck Bunny 4K)</span>
+          </button>
+        </div>
+        <div id="file-info" class="file-info hidden"></div>
+      </div>
+
+      <!-- Quick Settings -->
+      <div class="section settings-grid">
+        <div class="setting-item">
+          <label for="mode-select">Video Format</label>
+          <select id="mode-select">
+            <option value="2d" selected>Standard 2D Movie</option>
+            <option value="3d-sbs">3D Side-by-Side (SBS)</option>
+            <option value="3d-ou">3D Over-Under (OU)</option>
+          </select>
+        </div>
+        <div class="setting-item">
+          <label for="env-select">Initial Environment</label>
+          <select id="env-select">
+            <option value="cinema" selected>Grand Cinema Hall</option>
+            <option value="void">Void Mode (Pure Black / OLED)</option>
+            <option value="bed">Bed Mode (Ceiling Screen)</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Launch Button -->
+      <div class="action-section">
+        <button id="btn-enter-vr" class="primary-btn">
+          <span>Enter VR & Insert into JioDive</span>
+          <span class="arrow">➔</span>
+        </button>
+      </div>
+
+      <!-- Quick Tips for JioDive -->
+      <div class="tips-card">
+        <h3>💡 JioDive Quick Controls</h3>
+        <ul>
+          <li><strong>Physical Button:</strong> Click while aiming at buttons to select. Click in empty space to hide/show the menu.</li>
+          <li><strong>Double Click:</strong> Instantly recenters the screen if your phone drifts.</li>
+          <li><strong>Drift/Bed Mode:</strong> Toggle "Bed Mode" anytime to watch lying down flat.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- The 3D Canvas -->
+  <canvas id="vr-canvas"></canvas>
+
+  <!-- Video Element (Offscreen layout node, mapped to 3D texture) -->
+  <video id="video-player" playsinline preload="auto" class="hidden-video-element"></video>
+
+  <script type="module" src="./src/main.js"></script>
+</body>
+</html>
