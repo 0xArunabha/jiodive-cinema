@@ -12,12 +12,16 @@ const launcher = document.getElementById('launcher');
 const btnEnterVr = document.getElementById('btn-enter-vr');
 const fileInput = document.getElementById('video-file-input');
 const btnLoadDemo = document.getElementById('btn-load-demo');
+const streamUrlInput = document.getElementById('stream-url-input');
+const btnLoadUrl = document.getElementById('btn-load-url');
 const fileInfo = document.getElementById('file-info');
 const modeSelect = document.getElementById('mode-select');
 const envSelect = document.getElementById('env-select');
+const ipdSelect = document.getElementById('ipd-select');
+const fovSelect = document.getElementById('fov-select');
 
-// High-reliability open source demo video (Blender Foundation)
-const DEMO_VIDEO_URL = 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4';
+// Verified high-reliability sample video with full CORS support (VideoJS CDN)
+const DEMO_VIDEO_URL = 'https://vjs.zencdn.net/v/oceans.mp4';
 
 // Setup Three.js Scene & Renderer
 const scene = new THREE.Scene();
@@ -46,27 +50,29 @@ video.addEventListener('error', () => {
   let detail = 'The browser cannot decode or load this video file.';
   if (err) {
     if (err.code === MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED) {
-      detail = 'Format/codec not supported by browser. Note: Google Chrome does NOT support MKV containers, AC3/DTS audio, or certain HEVC profiles natively. Please convert to standard MP4 (H.264 + AAC) or WebM.';
+      detail = 'Format/codec not supported by browser. Note: Google Chrome does NOT support MKV containers, AC3/DTS audio, or certain HEVC profiles natively. If streaming an online URL, ensure the server permits CORS headers (Access-Control-Allow-Origin).';
     } else if (err.code === MediaError.MEDIA_ERR_DECODE) {
       detail = 'Video decoding failed midway. The file might be corrupt or encoded with an unsupported profile.';
     } else if (err.code === MediaError.MEDIA_ERR_NETWORK) {
-      detail = 'Network error while attempting to stream the video file.';
+      detail = 'Network error while attempting to stream the video file. Check your internet connection or verify the stream URL.';
     }
   }
   console.error('Video element error:', err, detail);
   fileInfo.className = 'file-info error';
-  fileInfo.innerHTML = `⚠️ <strong>Playback Error:</strong> ${detail}`;
+  fileInfo.textContent = `⚠️ Playback Error: ${detail}`;
   fileInfo.classList.remove('hidden');
 });
 
-// File Picker
+// File Picker (Item 7 Fix: safe DOM construction with textContent to prevent filename injection)
 fileInput.addEventListener('change', (e) => {
   const file = e.target.files[0];
   if (file) {
     const isMkv = file.name.toLowerCase().endsWith('.mkv');
+    fileInfo.textContent = '';
+
     if (isMkv) {
       fileInfo.className = 'file-info error';
-      fileInfo.innerHTML = `⚠️ <strong>Note on MKV:</strong> "${file.name}" is an MKV container. Browsers (Chrome/Safari) cannot natively decode MKV files. If the screen is black or silent, please convert it to MP4 (H.264 + AAC) or WebM.`;
+      fileInfo.textContent = `⚠️ Note on MKV: "${file.name}" is an MKV container. Browsers (Chrome/Safari) cannot natively decode MKV files. If the screen is black or silent, please convert it to MP4 (H.264 + AAC) or WebM.`;
       fileInfo.classList.remove('hidden');
     } else {
       fileInfo.className = 'file-info';
@@ -87,17 +93,37 @@ fileInput.addEventListener('change', (e) => {
   }
 });
 
-// Demo Video
+// Demo Video (Item 6 Fix: verified CORS video)
 btnLoadDemo.addEventListener('click', () => {
   video.crossOrigin = 'anonymous';
   video.src = DEMO_VIDEO_URL;
   video.load();
   fileInfo.className = 'file-info';
-  fileInfo.textContent = `Loaded: Big Buck Bunny (Online Stream)`;
+  fileInfo.textContent = `Loaded: Oceans HD (Online Sample)`;
   fileInfo.classList.remove('hidden');
 });
 
-// Screen Wake Lock (Bug 8 Fix: Keeps screen awake and re-acquires on visibility change)
+// Online URL Streaming (Item 5 Fix)
+if (btnLoadUrl && streamUrlInput) {
+  btnLoadUrl.addEventListener('click', () => {
+    const url = streamUrlInput.value.trim();
+    if (!url) {
+      fileInfo.className = 'file-info error';
+      fileInfo.textContent = 'Please enter a valid video stream URL.';
+      fileInfo.classList.remove('hidden');
+      return;
+    }
+
+    video.crossOrigin = 'anonymous';
+    video.src = url;
+    video.load();
+    fileInfo.className = 'file-info';
+    fileInfo.textContent = `Streaming URL: ${url}`;
+    fileInfo.classList.remove('hidden');
+  });
+}
+
+// Screen Wake Lock
 async function requestWakeLock() {
   if ('wakeLock' in navigator) {
     try {
@@ -136,6 +162,13 @@ document.addEventListener('visibilitychange', async () => {
 
 window.addEventListener('pagehide', releaseWakeLock);
 
+// Handle Fullscreen exit (Item 3 Fix: auto exit VR if user presses Esc or swipes down)
+document.addEventListener('fullscreenchange', () => {
+  if (!document.fullscreenElement && rig.isVrActive) {
+    gazeUI.exitVR();
+  }
+});
+
 // Enter VR
 btnEnterVr.addEventListener('click', async () => {
   // If no video loaded, load demo automatically
@@ -146,7 +179,6 @@ btnEnterVr.addEventListener('click', async () => {
   }
 
   // CRITICAL: Trigger playback SYNCHRONOUSLY directly inside the user click event!
-  // Doing this immediately before any awaits preserves transient user activation so autoplay audio is allowed.
   let playPromise = null;
   try {
     playPromise = video.play();
@@ -167,7 +199,7 @@ btnEnterVr.addEventListener('click', async () => {
     });
   }
 
-  // Bug 5 Fix: Request Gyroscope permissions with iOS alert if denied
+  // Request Gyroscope permissions with iOS alert if denied
   const gyroGranted = await rig.requestGyroPermission();
   if (!gyroGranted) {
     alert('Motion & Orientation access was denied. If on iPhone, please allow Motion & Orientation access in iOS Settings > Safari so VR head-tracking works.');
@@ -178,7 +210,6 @@ btnEnterVr.addEventListener('click', async () => {
     if (document.documentElement.requestFullscreen) {
       await document.documentElement.requestFullscreen();
     }
-    // Lock screen orientation to landscape if supported (using window.screen)
     if (window.screen && window.screen.orientation && window.screen.orientation.lock) {
       await window.screen.orientation.lock('landscape').catch(() => {});
     }
@@ -188,9 +219,16 @@ btnEnterVr.addEventListener('click', async () => {
 
   await requestWakeLock();
 
-  // Apply selected settings (Bug 6 Fix: pass gazeUI so Bed Mode tilts menu as well)
+  // Apply selected settings (Format, Environment, IPD, FOV)
   cinemaScreen.setFormat(modeSelect.value);
   environments.setEnvironment(envSelect.value, cinemaScreen, gazeUI);
+
+  if (ipdSelect) {
+    rig.setIPD(parseFloat(ipdSelect.value));
+  }
+  if (fovSelect) {
+    rig.setFOV(parseFloat(fovSelect.value));
+  }
 
   // If video is still paused, attempt play once more
   if (video.paused) {
@@ -207,12 +245,12 @@ btnEnterVr.addEventListener('click', async () => {
 function animate(time) {
   requestAnimationFrame(animate);
 
-  // Performance Optimization: Skip 100% of 3D rendering while 2D launcher is visible
+  // Skip 100% of 3D rendering while 2D launcher is visible
   if (!rig.isVrActive) {
     return;
   }
 
-  // Update VR modules (VideoTexture updates automatically per decoded video frame)
+  // Update VR modules
   rig.update();
   ambient.update(time);
   gazeUI.update();

@@ -4,6 +4,10 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
   <meta name="theme-color" content="#0a0a0c" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="JioDive VR" />
+  <link rel="manifest" href="./manifest.webmanifest" />
   <title>JioDive VR Cinema</title>
   <link rel="stylesheet" href="./src/style.css" />
 </head>
@@ -27,10 +31,17 @@
             <input type="file" id="video-file-input" accept="video/mp4,video/webm,video/ogg,video/quicktime,.mp4,.webm,.m4v,.mov,.mkv" />
           </label>
           <p class="format-hint">Recommended: <strong>MP4 (H.264 + AAC)</strong> or <strong>WebM</strong>. Browsers cannot play MKV containers natively.</p>
-          <div class="or-divider">OR</div>
+
+          <div class="or-divider">OR STREAM ONLINE URL</div>
+          <div class="url-input-container">
+            <input type="url" id="stream-url-input" placeholder="https://example.com/movie.mp4" class="text-input" />
+            <button id="btn-load-url" class="secondary-btn btn-sm">Load Stream</button>
+          </div>
+
+          <div class="or-divider">OR TRY SAMPLE</div>
           <button id="btn-load-demo" class="secondary-btn">
             <span class="icon">🎬</span>
-            <span>Load Demo Movie (Big Buck Bunny 4K)</span>
+            <span>Load Demo Movie (Oceans HD Sample)</span>
           </button>
         </div>
         <div id="file-info" class="file-info hidden"></div>
@@ -56,6 +67,24 @@
             <option value="bed">Bed Mode (Ceiling Screen)</option>
           </select>
         </div>
+        <div class="setting-item">
+          <label for="ipd-select">Lens IPD Separation</label>
+          <select id="ipd-select">
+            <option value="0.058">58 mm (Narrow)</option>
+            <option value="0.064" selected>64 mm (Standard JioDive)</option>
+            <option value="0.068">68 mm (Wide)</option>
+            <option value="0.072">72 mm (Extra Wide)</option>
+          </select>
+        </div>
+        <div class="setting-item">
+          <label for="fov-select">Field of View (FOV)</label>
+          <select id="fov-select">
+            <option value="70">70° (Tighter / Sharper)</option>
+            <option value="75" selected>75° (Standard JioDive Lens)</option>
+            <option value="80">80° (Wide)</option>
+            <option value="85">85° (Immersive IMAX)</option>
+          </select>
+        </div>
       </div>
 
       <!-- Launch Button -->
@@ -73,6 +102,8 @@
           <li><strong>Physical Button:</strong> Click while aiming at buttons to select. Click in empty space to hide/show the menu.</li>
           <li><strong>Double Click:</strong> Instantly recenters the screen if your phone drifts.</li>
           <li><strong>Drift/Bed Mode:</strong> Toggle "Bed Mode" anytime to watch lying down flat.</li>
+          <li><strong>Exit VR:</strong> Click "🚪 Exit VR" on the in-VR floating panel or exit fullscreen to change movies.</li>
+          <li><strong>iOS Safari:</strong> Tap Share ➔ <em>"Add to Home Screen"</em> to run in true full screen without browser toolbars.</li>
         </ul>
       </div>
     </div>

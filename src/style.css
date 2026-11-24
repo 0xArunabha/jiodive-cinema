@@ -141,6 +141,34 @@ h1 {
   color: #475569;
 }
 
+.url-input-container {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.text-input {
+  flex: 1;
+  padding: 11px 14px;
+  background: #181a27;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  color: #f1f5f9;
+  font-size: 13px;
+  outline: none;
+  transition: border-color 0.2s ease;
+}
+
+.text-input:focus {
+  border-color: #6366f1;
+}
+
+.btn-sm {
+  padding: 10px 14px;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
 .secondary-btn {
   display: flex;
   align-items: center;

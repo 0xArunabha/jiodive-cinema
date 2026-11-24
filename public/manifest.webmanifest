@@ -1,0 +1,17 @@
+{
+  "name": "JioDive VR Cinema",
+  "short_name": "JioDive VR",
+  "description": "Virtual Cinema & IMAX-style 3D theater player for JioDive headsets",
+  "start_url": "./",
+  "display": "standalone",
+  "orientation": "landscape",
+  "background_color": "#0a0a0c",
+  "theme_color": "#0a0a0c",
+  "icons": [
+    {
+      "src": "favicon.ico",
+      "sizes": "64x64 32x32 24x24 16x16",
+      "type": "image/x-icon"
+    }
+  ]
+}

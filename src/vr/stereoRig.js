@@ -87,6 +87,13 @@ export class StereoRig {
     this.updateCameras();
   }
 
+  setFOV(fovDegrees) {
+    this.cameraL.fov = fovDegrees;
+    this.cameraL.updateProjectionMatrix();
+    this.cameraR.fov = fovDegrees;
+    this.cameraR.updateProjectionMatrix();
+  }
+
   initListeners() {
     // Window resize
     window.addEventListener('resize', () => this.onResize());

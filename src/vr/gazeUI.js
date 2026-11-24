@@ -86,19 +86,29 @@ export class GazeUI {
     });
 
     // Row 2 Buttons
-    const audioBtn = this.createButtonMesh('🔊 Sound', -1.2, -0.16, () => this.toggleAudio());
+    const audioBtn = this.createButtonMesh('🔊 Sound', -1.4, -0.16, () => this.toggleAudio());
     this.menuGroup.add(audioBtn);
     this.interactiveObjects.push(audioBtn);
     this.audioBtnMesh = audioBtn;
 
-    const formatBtn = this.createButtonMesh('🕶 2D', 0.0, -0.16, () => this.cycleFormat());
+    const formatBtn = this.createButtonMesh('🕶 2D', -0.7, -0.16, () => this.cycleFormat());
     this.menuGroup.add(formatBtn);
     this.interactiveObjects.push(formatBtn);
     this.formatBtnMesh = formatBtn;
 
-    const bedBtn = this.createButtonMesh('🛏 Bed Mode', 1.2, -0.16, () => this.toggleBedMode());
+    const ipdMm = Math.round(this.rig.ipd * 1000);
+    const ipdBtn = this.createButtonMesh(`👁 ${ipdMm}mm`, 0.0, -0.16, () => this.cycleIPD());
+    this.menuGroup.add(ipdBtn);
+    this.interactiveObjects.push(ipdBtn);
+    this.ipdBtnMesh = ipdBtn;
+
+    const bedBtn = this.createButtonMesh('🛏 Bed Mode', 0.7, -0.16, () => this.toggleBedMode());
     this.menuGroup.add(bedBtn);
     this.interactiveObjects.push(bedBtn);
+
+    const exitBtn = this.createButtonMesh('🚪 Exit VR', 1.4, -0.16, () => this.exitVR());
+    this.menuGroup.add(exitBtn);
+    this.interactiveObjects.push(exitBtn);
   }
 
   createButtonMesh(text, x, y, onClick) {
@@ -284,6 +294,36 @@ export class GazeUI {
     this.screen.setFormat(next);
   }
 
+  cycleIPD() {
+    const ipdValues = [0.058, 0.064, 0.068, 0.072];
+    const currentIndex = ipdValues.findIndex(v => Math.abs(v - this.rig.ipd) < 0.001);
+    const nextIndex = (currentIndex + 1) % ipdValues.length;
+    const newIPD = ipdValues[nextIndex];
+    this.rig.setIPD(newIPD);
+    const mm = Math.round(newIPD * 1000);
+    if (this.ipdBtnMesh) {
+      this.updateButtonText(this.ipdBtnMesh, `👁 ${mm}mm`);
+    }
+    const ipdSelect = document.getElementById('ipd-select');
+    if (ipdSelect) {
+      ipdSelect.value = newIPD.toString();
+    }
+  }
+
+  exitVR() {
+    this.rig.isVrActive = false;
+    if (this.video) {
+      this.video.pause();
+    }
+    if (document.fullscreenElement) {
+      document.exitFullscreen().catch(() => {});
+    }
+    const launcher = document.getElementById('launcher');
+    if (launcher) {
+      launcher.classList.remove('hidden');
+    }
+  }
+
   /**
    * Bug 6 Fix: Reorient menu in Bed Mode so it tilts with the screen onto the ceiling
    */
@@ -327,32 +367,59 @@ export class GazeUI {
           this.updateButtonText(this.formatBtnMesh, fmtLabel);
         }
       }
-    }
 
-    if (!this.isMenuVisible) {
-      this.hoveredObject = null;
-      this.reticle.scale.set(1, 1, 1);
-      return;
+      if (this.ipdBtnMesh) {
+        const mm = Math.round(this.rig.ipd * 1000);
+        const expectedIpd = `👁 ${mm}mm`;
+        if (this.ipdBtnMesh.userData.currentText !== expectedIpd) {
+          this.updateButtonText(this.ipdBtnMesh, expectedIpd);
+        }
+      }
     }
 
     // Cast ray from center of head view
     this.raycaster.setFromCamera({ x: 0, y: 0 }, this.rig.cameraL);
-    const intersects = this.raycaster.intersectObjects(this.interactiveObjects);
 
-    if (intersects.length > 0) {
-      const hit = intersects[0].object;
-      if (this.hoveredObject !== hit) {
-        if (this.hoveredObject) this.hoveredObject.scale.set(1, 1, 1);
-        this.hoveredObject = hit;
-        this.hoveredObject.scale.set(1.08, 1.08, 1.08); // Hover highlight
-        this.reticle.scale.set(1.4, 1.4, 1.4);
+    let targetDistance = 6.0;
+
+    if (this.isMenuVisible) {
+      const menuIntersects = this.raycaster.intersectObjects(this.interactiveObjects);
+      if (menuIntersects.length > 0) {
+        const hit = menuIntersects[0].object;
+        targetDistance = Math.max(0.5, menuIntersects[0].distance);
+        if (this.hoveredObject !== hit) {
+          if (this.hoveredObject) this.hoveredObject.scale.set(1, 1, 1);
+          this.hoveredObject = hit;
+          this.hoveredObject.scale.set(1.08, 1.08, 1.08); // Hover highlight
+        }
+      } else {
+        if (this.hoveredObject) {
+          this.hoveredObject.scale.set(1, 1, 1);
+          this.hoveredObject = null;
+        }
       }
     } else {
       if (this.hoveredObject) {
         this.hoveredObject.scale.set(1, 1, 1);
         this.hoveredObject = null;
-        this.reticle.scale.set(1, 1, 1);
       }
     }
+
+    // If not hovering over a menu button, test ray against cinema screen mesh
+    if (!this.hoveredObject && this.screen && this.screen.mesh) {
+      const screenIntersects = this.raycaster.intersectObject(this.screen.mesh);
+      if (screenIntersects.length > 0) {
+        targetDistance = Math.max(0.5, screenIntersects[0].distance);
+      }
+    }
+
+    // Place reticle at hit distance slightly forward to avoid z-fighting and eliminate diplopia/double vision
+    this.reticle.position.z = -targetDistance + 0.04;
+
+    // Scale reticle proportionally with distance to maintain optimal gaze reticle size
+    const baseScale = targetDistance / 1.8;
+    const hoverScale = this.hoveredObject ? 1.35 : 1.0;
+    const finalScale = baseScale * hoverScale;
+    this.reticle.scale.set(finalScale, finalScale, finalScale);
   }
 }
