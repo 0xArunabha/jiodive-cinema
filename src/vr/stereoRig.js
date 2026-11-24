@@ -136,7 +136,9 @@ export class StereoRig {
         uK1: { value: this.k1 },
         uK2: { value: this.k2 },
         uTanHalf: { value: new THREE.Vector2(1, 1) },
-        uRenderTanHalf: { value: new THREE.Vector2(1, 1) }
+        uRenderTanHalf: { value: new THREE.Vector2(1, 1) },
+        uTexelSize: { value: new THREE.Vector2(1 / 1280, 1 / 1440) },
+        uSharpness: { value: 0.55 }
       };
 
       const postMat = new THREE.ShaderMaterial({
@@ -157,6 +159,8 @@ export class StereoRig {
           uniform float uK2;
           uniform vec2 uTanHalf;
           uniform vec2 uRenderTanHalf;
+          uniform vec2 uTexelSize;
+          uniform float uSharpness;
           varying vec2 vUv;
 
           void main() {
@@ -173,8 +177,27 @@ export class StereoRig {
               return;
             }
 
-            vec4 texel = texture2D(tDiffuse, clamp(srcUv, vec2(0.0), vec2(1.0)));
-            gl_FragColor = vec4(texel.rgb * insideMask, 1.0);
+            vec2 uv0 = clamp(srcUv, vec2(0.0), vec2(1.0));
+            vec3 c = texture2D(tDiffuse, uv0).rgb;
+
+            // Perceptual 5-tap Contrast-Adaptive Sharpening (CAS) to offset bilinear distortion blur
+            if (uSharpness > 0.0) {
+              vec3 cp = sqrt(max(c, vec3(0.0)));
+              vec3 n = sqrt(max(texture2D(tDiffuse, clamp(uv0 + vec2(0.0, uTexelSize.y), vec2(0.0), vec2(1.0))).rgb, vec3(0.0)));
+              vec3 s = sqrt(max(texture2D(tDiffuse, clamp(uv0 - vec2(0.0, uTexelSize.y), vec2(0.0), vec2(1.0))).rgb, vec3(0.0)));
+              vec3 e = sqrt(max(texture2D(tDiffuse, clamp(uv0 + vec2(uTexelSize.x, 0.0), vec2(0.0), vec2(1.0))).rgb, vec3(0.0)));
+              vec3 w = sqrt(max(texture2D(tDiffuse, clamp(uv0 - vec2(uTexelSize.x, 0.0), vec2(0.0), vec2(1.0))).rgb, vec3(0.0)));
+
+              vec3 mn = min(cp, min(min(n, s), min(e, w)));
+              vec3 mx = max(cp, max(max(n, s), max(e, w)));
+              vec3 amp = clamp(min(mn, vec3(1.0) - mx) / max(mx, vec3(1e-4)), vec3(0.0), vec3(1.0));
+              float peak = -1.0 / mix(8.0, 5.0, uSharpness);
+              vec3 weight = sqrt(amp) * peak;
+              vec3 sharpened = clamp((cp + (n + s + e + w) * weight) / (vec3(1.0) + 4.0 * weight), vec3(0.0), vec3(1.0));
+              c = sharpened * sharpened;
+            }
+
+            gl_FragColor = vec4(c * insideMask, 1.0);
             #include <colorspace_fragment>
           }
         `
@@ -204,10 +227,11 @@ export class StereoRig {
   resizeDistortionTargets() {
     this.disposeDistortionTargets();
     const dpr = this.renderer.getPixelRatio();
-    // 1.25x supersampling compensates for Brown-Conrady magnification blur so UI text stays razor-sharp
-    const ssScale = Math.min(2.5, dpr * 1.25);
-    const rtW = Math.max(1, Math.floor((window.innerWidth * ssScale) / 2));
-    const rtH = Math.max(1, Math.floor(window.innerHeight * ssScale));
+    // Oversample each eye target (minimum 2.0x on 1x displays, up to 3.5x on high-DPR OLED phones, capped for VRAM safety)
+    const ssScale = Math.min(3.5, Math.max(2.0, dpr * 1.45));
+    const maxDim = Math.min(2400, this.renderer.capabilities.maxTextureSize || 2048);
+    const rtW = Math.min(maxDim, Math.max(1, Math.floor((window.innerWidth * ssScale) / 2)));
+    const rtH = Math.min(maxDim, Math.max(1, Math.floor(window.innerHeight * ssScale)));
     const canHalfFloat =
       this.renderer.capabilities.isWebGL2 &&
       (this.renderer.extensions.has('EXT_color_buffer_float') ||
@@ -216,13 +240,18 @@ export class StereoRig {
     const opts = {
       minFilter: THREE.LinearFilter,
       magFilter: THREE.LinearFilter,
+      generateMipmaps: false,
       format: THREE.RGBAFormat,
       type: canHalfFloat ? THREE.HalfFloatType : THREE.UnsignedByteType,
-      samples: this.renderer.capabilities.isWebGL2 ? 2 : 0
+      samples: this.renderer.capabilities.isWebGL2 ? 4 : 0
     };
 
     this.rtL = new THREE.WebGLRenderTarget(rtW, rtH, opts);
     this.rtR = new THREE.WebGLRenderTarget(rtW, rtH, opts);
+
+    if (this.postUniforms?.uTexelSize) {
+      this.postUniforms.uTexelSize.value.set(1.0 / rtW, 1.0 / rtH);
+    }
   }
 
   updateProjectionAndUniforms() {

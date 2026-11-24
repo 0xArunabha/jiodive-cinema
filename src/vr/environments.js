@@ -239,7 +239,7 @@ export class Environments {
     this.cinemaGroup.add(baseFloor);
 
     // Tiered Platforms for Seating
-    const stepLightMat = new THREE.MeshBasicMaterial({ color: 0xffa333 });
+    const stepLightMat = new THREE.MeshBasicMaterial({ color: 0xc97b2c });
     const tierRows = 6;
 
     for (let r = 0; r < tierRows; r++) {
@@ -335,8 +335,8 @@ export class Environments {
     stage.position.set(0, 0.2, -6.6);
     this.cinemaGroup.add(stage);
 
-    // Front Stage Edge Amber Glow Strip
-    const stageEdgeMat = new THREE.MeshBasicMaterial({ color: 0xffaa44 });
+    // Front Stage Edge Warm Glow Strip
+    const stageEdgeMat = new THREE.MeshBasicMaterial({ color: 0xc87d32 });
     const stageEdgeGeom = new THREE.BoxGeometry(14, 0.03, 0.06);
     const stageEdge = new THREE.Mesh(stageEdgeGeom, stageEdgeMat);
     stageEdge.position.set(0, 0.41, -5.1);
@@ -517,19 +517,19 @@ export class Environments {
     glass.rotation.y = Math.PI;
     this.cinemaGroup.add(glass);
 
-    // Subtle atmospheric projector light beam cutting across theater
-    const beamGeom = new THREE.ConeGeometry(3.6, 20, 24, 1, true);
+    // Subtle atmospheric projector beam kept high & behind viewer so it never clouds the cinema screen
+    const beamGeom = new THREE.ConeGeometry(1.9, 8.5, 32, 1, true);
     const beamMat = new THREE.MeshBasicMaterial({
       color: 0x93c5fd,
       transparent: true,
-      opacity: 0.02,
+      opacity: 0.015,
       depthWrite: false,
       blending: THREE.AdditiveBlending,
       side: THREE.DoubleSide
     });
     const beam = new THREE.Mesh(beamGeom, beamMat);
-    beam.position.set(0, 4.0, 3.8);
-    beam.rotation.x = Math.PI / 2 + 0.18;
+    beam.position.set(0, 5.4, 9.6);
+    beam.rotation.x = Math.PI / 2 + 0.16;
     this.cinemaGroup.add(beam);
   }
 

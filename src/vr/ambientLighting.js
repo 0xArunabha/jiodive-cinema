@@ -23,8 +23,8 @@ export class AmbientLighting {
     this.screenLight.position.set(0, 3.0, -5.5);
     this.scene.add(this.screenLight);
 
-    // Subtle fill ambient light
-    this.ambientBase = new THREE.AmbientLight(0x22263a, 1.2);
+    // Subtle fill ambient light so theater seating & architecture stay softly legible
+    this.ambientBase = new THREE.AmbientLight(0x282d44, 1.45);
     this.scene.add(this.ambientBase);
 
     this.currentColor = new THREE.Color(0x2a2d42);

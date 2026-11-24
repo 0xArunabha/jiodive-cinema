@@ -260,6 +260,7 @@ export class CinemaScreen {
     this.subtitleTexture = new THREE.CanvasTexture(this.subtitleCanvas);
     this.subtitleTexture.minFilter = THREE.LinearFilter;
     this.subtitleTexture.magFilter = THREE.LinearFilter;
+    this.subtitleTexture.anisotropy = 8;
     this.subtitleTexture.colorSpace = THREE.SRGBColorSpace;
 
     const sub = this.getSubtitleDims();

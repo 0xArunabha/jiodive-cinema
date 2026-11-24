@@ -176,19 +176,20 @@ export class GazeUI {
       map: bgUi.texture,
       transparent: false,
       alphaTest: 0.5,
-      depthWrite: true,
+      depthTest: false,
+      depthWrite: false,
       side: THREE.DoubleSide
     });
     const mesh = new THREE.Mesh(bgGeom, bgMat);
-    mesh.renderOrder = 4;
+    mesh.renderOrder = 500;
     return mesh;
   }
 
   createControlPanel() {
     this.menuGroup = new THREE.Group();
-    this.menuGroup.position.set(0, 0.49, -3.6);
-    this.menuGroup.rotation.x = -0.2;
-    this.menuGroup.scale.set(0.58, 0.58, 0.58);
+    this.menuGroup.position.set(0, 0.56, -2.95);
+    this.menuGroup.rotation.x = -0.22;
+    this.menuGroup.scale.set(0.72, 0.72, 0.72);
     this.rig.scene.add(this.menuGroup);
 
     // 1. Main Theater Remote Group
@@ -208,8 +209,9 @@ export class GazeUI {
         y: 0.04,
         w: 0.68,
         h: 0.23,
-        canvasW: 220,
-        canvasH: 88,
+        canvasW: 204,
+        canvasH: 74,
+        fontSize: 24,
         variant: 'glass',
         action: () => this.seek(-10)
       },
@@ -221,8 +223,8 @@ export class GazeUI {
         w: 1.30,
         h: 0.24,
         canvasW: 360,
-        canvasH: 92,
-        fontSize: 25,
+        canvasH: 80,
+        fontSize: 28,
         variant: 'primary',
         ref: 'playBtnMesh',
         action: () => this.togglePlay()
@@ -234,8 +236,9 @@ export class GazeUI {
         y: 0.04,
         w: 0.68,
         h: 0.23,
-        canvasW: 220,
-        canvasH: 88,
+        canvasW: 204,
+        canvasH: 74,
+        fontSize: 24,
         variant: 'glass',
         action: () => this.seek(10)
       },
@@ -246,8 +249,9 @@ export class GazeUI {
         y: 0.04,
         w: 0.68,
         h: 0.23,
-        canvasW: 220,
-        canvasH: 88,
+        canvasW: 204,
+        canvasH: 74,
+        fontSize: 24,
         variant: 'glass',
         ref: 'audioBtnMesh',
         action: () => this.toggleAudio()
@@ -265,9 +269,9 @@ export class GazeUI {
         y: -0.32,
         w: 0.66,
         h: 0.20,
-        canvasW: 216,
-        canvasH: 76,
-        fontSize: 21,
+        canvasW: 200,
+        canvasH: 68,
+        fontSize: 23,
         variant: 'subtle',
         ref: 'roomBtnMesh',
         action: () => this.cycleEnvironment()
@@ -279,9 +283,9 @@ export class GazeUI {
         y: -0.32,
         w: 0.66,
         h: 0.20,
-        canvasW: 216,
-        canvasH: 76,
-        fontSize: 21,
+        canvasW: 200,
+        canvasH: 68,
+        fontSize: 23,
         variant: 'subtle',
         ref: 'sizeBtnMesh',
         action: () => this.cycleScreenPreset()
@@ -293,9 +297,9 @@ export class GazeUI {
         y: -0.32,
         w: 0.66,
         h: 0.20,
-        canvasW: 216,
-        canvasH: 76,
-        fontSize: 21,
+        canvasW: 200,
+        canvasH: 68,
+        fontSize: 23,
         variant: 'subtle',
         action: () => this.rig.recenter()
       },
@@ -306,9 +310,9 @@ export class GazeUI {
         y: -0.32,
         w: 0.66,
         h: 0.20,
-        canvasW: 216,
-        canvasH: 76,
-        fontSize: 21,
+        canvasW: 200,
+        canvasH: 68,
+        fontSize: 23,
         variant: 'accent',
         action: () => this.setSettingsOpen(true)
       },
@@ -319,9 +323,9 @@ export class GazeUI {
         y: -0.32,
         w: 0.66,
         h: 0.20,
-        canvasW: 216,
-        canvasH: 76,
-        fontSize: 21,
+        canvasW: 200,
+        canvasH: 68,
+        fontSize: 23,
         variant: 'danger',
         action: () => this.exitVR()
       }
@@ -344,9 +348,9 @@ export class GazeUI {
         y: 0.35,
         w: 0.68,
         h: 0.16,
-        canvasW: 216,
-        canvasH: 64,
-        fontSize: 21,
+        canvasW: 204,
+        canvasH: 56,
+        fontSize: 23,
         variant: 'accent',
         action: () => this.setSettingsOpen(false)
       },
@@ -363,9 +367,9 @@ export class GazeUI {
         y: 0.03,
         w: 0.84,
         h: 0.22,
-        canvasW: 268,
-        canvasH: 82,
-        fontSize: 21,
+        canvasW: 252,
+        canvasH: 74,
+        fontSize: 24,
         variant: 'glass',
         ref: 'formatBtnMesh',
         action: () => this.cycleFormat()
@@ -377,9 +381,9 @@ export class GazeUI {
         y: 0.03,
         w: 0.84,
         h: 0.22,
-        canvasW: 268,
-        canvasH: 82,
-        fontSize: 21,
+        canvasW: 252,
+        canvasH: 74,
+        fontSize: 24,
         variant: 'glass',
         ref: 'swapBtnMesh',
         action: () => this.toggleSwapEyes()
@@ -391,9 +395,9 @@ export class GazeUI {
         y: 0.03,
         w: 0.84,
         h: 0.22,
-        canvasW: 268,
-        canvasH: 82,
-        fontSize: 21,
+        canvasW: 252,
+        canvasH: 74,
+        fontSize: 24,
         variant: 'glass',
         ref: 'bedBtnMesh',
         action: () => this.toggleBedMode()
@@ -405,9 +409,9 @@ export class GazeUI {
         y: 0.03,
         w: 0.84,
         h: 0.22,
-        canvasW: 268,
-        canvasH: 82,
-        fontSize: 21,
+        canvasW: 252,
+        canvasH: 74,
+        fontSize: 24,
         variant: 'glass',
         ref: 'brightBtnMesh',
         action: () => this.cycleBrightness()
@@ -426,9 +430,9 @@ export class GazeUI {
         y: -0.31,
         w: 0.84,
         h: 0.22,
-        canvasW: 268,
-        canvasH: 82,
-        fontSize: 21,
+        canvasW: 252,
+        canvasH: 74,
+        fontSize: 24,
         variant: 'glass',
         ref: 'ipdBtnMesh',
         action: () => this.cycleIPD()
@@ -440,9 +444,9 @@ export class GazeUI {
         y: -0.31,
         w: 0.84,
         h: 0.22,
-        canvasW: 268,
-        canvasH: 82,
-        fontSize: 21,
+        canvasW: 252,
+        canvasH: 74,
+        fontSize: 24,
         variant: 'glass',
         ref: 'fovBtnMesh',
         action: () => this.cycleFOV()
@@ -454,9 +458,9 @@ export class GazeUI {
         y: -0.31,
         w: 0.84,
         h: 0.22,
-        canvasW: 268,
-        canvasH: 82,
-        fontSize: 21,
+        canvasW: 252,
+        canvasH: 74,
+        fontSize: 24,
         variant: 'glass',
         active: true,
         ref: 'lensBtnMesh',
@@ -469,9 +473,9 @@ export class GazeUI {
         y: -0.31,
         w: 0.84,
         h: 0.22,
-        canvasW: 268,
-        canvasH: 82,
-        fontSize: 21,
+        canvasW: 252,
+        canvasH: 74,
+        fontSize: 24,
         variant: 'glass',
         ref: 'dwellBtnMesh',
         action: () => this.toggleGazeDwell()
@@ -497,12 +501,13 @@ export class GazeUI {
     const seekMat = new THREE.MeshBasicMaterial({
       map: seekUi.texture,
       transparent: true,
+      depthTest: false,
       depthWrite: false,
       side: THREE.DoubleSide
     });
     this.seekBarMesh = new THREE.Mesh(seekGeom, seekMat);
     this.seekBarMesh.position.set(-0.61, rowY, 0.02);
-    this.seekBarMesh.renderOrder = 6;
+    this.seekBarMesh.renderOrder = 501;
     this.seekBarMesh.userData = {
       isSeekBar: true,
       noHoverScale: true,
@@ -516,12 +521,13 @@ export class GazeUI {
     const timeMat = new THREE.MeshBasicMaterial({
       map: timeUi.texture,
       transparent: true,
+      depthTest: false,
       depthWrite: false,
       side: THREE.DoubleSide
     });
     this.timeMesh = new THREE.Mesh(timeGeom, timeMat);
     this.timeMesh.position.set(1.01, rowY, 0.02);
-    this.timeMesh.renderOrder = 6;
+    this.timeMesh.renderOrder = 501;
     this.timeMesh.userData = { ...timeUi };
     targetGroup.add(this.timeMesh);
 
@@ -533,9 +539,9 @@ export class GazeUI {
         y: rowY,
         w: 0.38,
         h: 0.14,
-        canvasW: 168,
-        canvasH: 56,
-        fontSize: 19,
+        canvasW: 152,
+        canvasH: 52,
+        fontSize: 21,
         variant: 'subtle',
         action: () => this.toggleSubtitles()
       },
@@ -559,13 +565,14 @@ export class GazeUI {
     const mat = new THREE.MeshBasicMaterial({
       map: ui.texture,
       transparent: true,
+      depthTest: false,
       depthWrite: false,
       side: THREE.DoubleSide
     });
 
     const mesh = new THREE.Mesh(geom, mat);
     mesh.position.set(cfg.x, cfg.y, 0.02);
-    mesh.renderOrder = 6;
+    mesh.renderOrder = 501;
     mesh.userData = {
       onClick: cfg.action,
       originalScale: new THREE.Vector3(1, 1, 1),
@@ -591,7 +598,7 @@ export class GazeUI {
     ctx.save();
     ctx.strokeStyle = color;
     ctx.fillStyle = color;
-    ctx.lineWidth = Math.max(1.8, s * 0.12);
+    ctx.lineWidth = Math.max(2.0, s * 0.135);
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
 
@@ -933,13 +940,13 @@ export class GazeUI {
       ctx.fill();
     }
 
-    // Center [vector icon + gap + text] horizontally
-    ctx.font = `600 ${fontSize}px -apple-system, BlinkMacSystemFont, sans-serif`;
+    // Center [vector icon + gap + text] horizontally with bold legibility
+    ctx.font = `700 ${fontSize}px -apple-system, BlinkMacSystemFont, sans-serif`;
     ctx.textBaseline = 'middle';
 
     const textW = label ? ctx.measureText(label).width : 0;
-    const iconSize = icon ? Math.round(fontSize * 0.96) : 0;
-    const gap = icon && label ? 9 : 0;
+    const iconSize = icon ? Math.round(fontSize * 0.94) : 0;
+    const gap = icon && label ? 8 : 0;
     const totalW = iconSize + gap + textW;
     const startX = (canvasW - totalW) / 2;
     const cy = canvasH / 2;
@@ -1334,7 +1341,7 @@ export class GazeUI {
       ctx.fillStyle = '#38bdf8';
     }
 
-    ctx.font = '600 20px -apple-system, BlinkMacSystemFont, monospace';
+    ctx.font = '700 22px -apple-system, BlinkMacSystemFont, monospace';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(label, w / 2, h / 2 + 1);
@@ -1349,14 +1356,14 @@ export class GazeUI {
    */
   setTilt(pitchDegrees) {
     const pitchRad = THREE.MathUtils.degToRad(pitchDegrees);
-    const relY = -0.91;
-    const relZ = -3.6;
+    const relY = -0.84;
+    const relZ = -2.95;
 
     const newY = 1.4 + (relY * Math.cos(pitchRad) - relZ * Math.sin(pitchRad));
     const newZ = relY * Math.sin(pitchRad) + relZ * Math.cos(pitchRad);
 
     this.menuGroup.position.set(0, newY, newZ);
-    this.menuGroup.rotation.x = -0.2 + pitchRad;
+    this.menuGroup.rotation.x = -0.22 + pitchRad;
   }
 
   pollGamepad(dtSec) {
