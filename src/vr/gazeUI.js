@@ -107,20 +107,48 @@ export class GazeUI {
     this.rig.head.add(this.dwellRing);
   }
 
+  createUiTexture(logicalW, logicalH) {
+    const canvas = document.createElement('canvas');
+    canvas.width = logicalW * 2;
+    canvas.height = logicalH * 2;
+    const ctx = canvas.getContext('2d');
+    ctx.scale(2, 2); // 2x supersampled HiDPI drawing
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    const maxAniso = this.rig?.renderer?.capabilities?.getMaxAnisotropy?.() || 1;
+    texture.anisotropy = Math.min(8, maxAniso);
+    return { canvas, ctx, texture, logicalW, logicalH };
+  }
+
   createControlPanel() {
     this.menuGroup = new THREE.Group();
-    // Position floating panel above floor (y > 0.12m) and below IMAX screen edge, scaled to clear armrests
-    this.menuGroup.position.set(0, 0.48, -3.8);
+    // Position floating panel cleanly above floor and below IMAX screen edge, closer for sharp legibility
+    this.menuGroup.position.set(0, 0.49, -3.6);
     this.menuGroup.rotation.x = -0.2;
-    this.menuGroup.scale.set(0.56, 0.56, 0.56);
+    this.menuGroup.scale.set(0.58, 0.58, 0.58);
     this.rig.scene.add(this.menuGroup);
 
-    // Background Plate (accommodates top seek bar row + 2 6-button rows + 4-pill utility bar)
+    // Rounded high-opacity glass backdrop so distant stage LED lines never bleed through the menu
+    const bgUi = this.createUiTexture(792, 256);
+    const { ctx: bgCtx, logicalW: bw, logicalH: bh } = bgUi;
+    bgCtx.fillStyle = 'rgba(11, 13, 24, 0.98)';
+    bgCtx.beginPath();
+    if (bgCtx.roundRect) {
+      bgCtx.roundRect(3, 3, bw - 6, bh - 6, 22);
+    } else {
+      bgCtx.rect(3, 3, bw - 6, bh - 6);
+    }
+    bgCtx.fill();
+    bgCtx.strokeStyle = 'rgba(79, 70, 229, 0.45)';
+    bgCtx.lineWidth = 3;
+    bgCtx.stroke();
+
     const bgGeom = new THREE.PlaneGeometry(3.96, 1.28);
     const bgMat = new THREE.MeshBasicMaterial({
-      color: 0x0c0e17,
+      map: bgUi.texture,
       transparent: true,
-      opacity: 0.84,
+      alphaTest: 0.05,
+      depthWrite: true,
       side: THREE.DoubleSide
     });
     const bg = new THREE.Mesh(bgGeom, bgMat);
@@ -183,39 +211,27 @@ export class GazeUI {
   }
 
   createSeekBarRow(rowY = 0.46) {
-    // 1. Seek Track (interactive UV horizontal scrub)
-    const seekCanvas = document.createElement('canvas');
-    seekCanvas.width = 512;
-    seekCanvas.height = 48;
-    const seekTex = new THREE.CanvasTexture(seekCanvas);
-    seekTex.colorSpace = THREE.SRGBColorSpace;
+    // 1. Seek Track (interactive UV horizontal scrub, 2x HiDPI)
+    const seekUi = this.createUiTexture(512, 48);
     const seekGeom = new THREE.PlaneGeometry(2.34, 0.14);
-    const seekMat = new THREE.MeshBasicMaterial({ map: seekTex, transparent: true, side: THREE.DoubleSide });
+    const seekMat = new THREE.MeshBasicMaterial({ map: seekUi.texture, transparent: true, side: THREE.DoubleSide });
     this.seekBarMesh = new THREE.Mesh(seekGeom, seekMat);
     this.seekBarMesh.position.set(-0.66, rowY, 0.02);
     this.seekBarMesh.userData = {
       isSeekBar: true,
       noHoverScale: true,
-      canvas: seekCanvas,
-      ctx: seekCanvas.getContext('2d')
+      ...seekUi
     };
     this.menuGroup.add(this.seekBarMesh);
     this.interactiveObjects.push(this.seekBarMesh);
 
-    // 2. Time Display Readout
-    const timeCanvas = document.createElement('canvas');
-    timeCanvas.width = 256;
-    timeCanvas.height = 48;
-    const timeTex = new THREE.CanvasTexture(timeCanvas);
-    timeTex.colorSpace = THREE.SRGBColorSpace;
+    // 2. Time Display Readout (2x HiDPI)
+    const timeUi = this.createUiTexture(256, 48);
     const timeGeom = new THREE.PlaneGeometry(0.74, 0.14);
-    const timeMat = new THREE.MeshBasicMaterial({ map: timeTex, transparent: true, side: THREE.DoubleSide });
+    const timeMat = new THREE.MeshBasicMaterial({ map: timeUi.texture, transparent: true, side: THREE.DoubleSide });
     this.timeMesh = new THREE.Mesh(timeGeom, timeMat);
     this.timeMesh.position.set(0.94, rowY, 0.02);
-    this.timeMesh.userData = {
-      canvas: timeCanvas,
-      ctx: timeCanvas.getContext('2d')
-    };
+    this.timeMesh.userData = { ...timeUi };
     this.menuGroup.add(this.timeMesh);
 
     // 3. Subtitle Toggle Button
@@ -241,16 +257,10 @@ export class GazeUI {
     const canvasH = opts.canvasH ?? 80;
     const fontSize = opts.fontSize ?? 26;
 
-    const canvas = document.createElement('canvas');
-    canvas.width = canvasW;
-    canvas.height = canvasH;
-    const ctx = canvas.getContext('2d');
-
-    const texture = new THREE.CanvasTexture(canvas);
-    texture.colorSpace = THREE.SRGBColorSpace;
+    const ui = this.createUiTexture(canvasW, canvasH);
     const geom = new THREE.PlaneGeometry(width, height);
     const mat = new THREE.MeshBasicMaterial({
-      map: texture,
+      map: ui.texture,
       transparent: true,
       side: THREE.DoubleSide
     });
@@ -260,8 +270,7 @@ export class GazeUI {
     mesh.userData = {
       onClick,
       originalScale: new THREE.Vector3(1, 1, 1),
-      canvas,
-      ctx,
+      ...ui,
       canvasW,
       canvasH,
       fontSize,
@@ -584,9 +593,7 @@ export class GazeUI {
 
   drawSeekBar(progressRatio, hoverRatio) {
     if (!this.seekBarMesh || !this.seekBarMesh.userData) return;
-    const { canvas, ctx } = this.seekBarMesh.userData;
-    const w = canvas.width;
-    const h = canvas.height;
+    const { ctx, logicalW: w, logicalH: h } = this.seekBarMesh.userData;
     const padX = 14;
     const trackW = w - padX * 2;
     const trackH = 12;
@@ -655,9 +662,7 @@ export class GazeUI {
 
   drawTimeReadout(currentSec, durationSec, hoverRatio) {
     if (!this.timeMesh || !this.timeMesh.userData) return;
-    const { canvas, ctx } = this.timeMesh.userData;
-    const w = canvas.width;
-    const h = canvas.height;
+    const { ctx, logicalW: w, logicalH: h } = this.timeMesh.userData;
 
     ctx.clearRect(0, 0, w, h);
 
@@ -679,7 +684,7 @@ export class GazeUI {
       ctx.fillStyle = '#7dd3fc';
     }
 
-    ctx.font = 'bold 21px -apple-system, monospace';
+    ctx.font = 'bold 23px -apple-system, monospace';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(label, w / 2, h / 2);
@@ -694,9 +699,9 @@ export class GazeUI {
    */
   setTilt(pitchDegrees) {
     const pitchRad = THREE.MathUtils.degToRad(pitchDegrees);
-    // Relative to eye position (0, 1.4, 0), normal menu pos is (0, -0.92, -3.8)
-    const relY = -0.92;
-    const relZ = -3.8;
+    // Relative to eye position (0, 1.4, 0), normal menu pos is (0, -0.91, -3.6)
+    const relY = -0.91;
+    const relZ = -3.6;
 
     const newY = 1.4 + (relY * Math.cos(pitchRad) - relZ * Math.sin(pitchRad));
     const newZ = relY * Math.sin(pitchRad) + relZ * Math.cos(pitchRad);

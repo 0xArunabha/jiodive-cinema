@@ -204,8 +204,10 @@ export class StereoRig {
   resizeDistortionTargets() {
     this.disposeDistortionTargets();
     const dpr = this.renderer.getPixelRatio();
-    const rtW = Math.max(1, Math.floor((window.innerWidth * dpr) / 2));
-    const rtH = Math.max(1, Math.floor(window.innerHeight * dpr));
+    // 1.25x supersampling compensates for Brown-Conrady magnification blur so UI text stays razor-sharp
+    const ssScale = Math.min(2.5, dpr * 1.25);
+    const rtW = Math.max(1, Math.floor((window.innerWidth * ssScale) / 2));
+    const rtH = Math.max(1, Math.floor(window.innerHeight * ssScale));
     const canHalfFloat =
       this.renderer.capabilities.isWebGL2 &&
       (this.renderer.extensions.has('EXT_color_buffer_float') ||
