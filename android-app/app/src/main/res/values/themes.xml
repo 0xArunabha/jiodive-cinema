@@ -1,0 +1,9 @@
+<resources>
+    <style name="Theme.JioDiveCinema" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">#F4F8F9</item>
+    </style>
+
+    <style name="Theme.JioDiveCinema.FullscreenVr" parent="android:Theme.Material.NoActionBar.Fullscreen">
+        <item name="android:windowBackground">#000000</item>
+    </style>
+</resources>
