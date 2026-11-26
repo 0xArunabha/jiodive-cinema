@@ -4,15 +4,18 @@ import android.annotation.SuppressLint
 import android.media.AudioManager
 import android.net.Uri
 import android.opengl.GLSurfaceView
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.Surface
 import android.view.WindowManager
 import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.OnBackPressedCallback
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
@@ -21,10 +24,12 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.common.VideoSize
 import androidx.media3.exoplayer.ExoPlayer
+import com.jiodive.cinema.R
 import com.jiodive.cinema.data.MediaRepository
 import com.jiodive.cinema.data.PrefsStore
 import com.jiodive.cinema.data.SrtVttParser
 import com.jiodive.cinema.model.SubtitleCue
+import com.jiodive.cinema.ui.components.DisplayRefreshHelper
 import kotlinx.coroutines.launch
 import kotlin.math.abs
 
@@ -37,6 +42,7 @@ import kotlin.math.abs
  */
 class VrPlayerActivity : ComponentActivity() {
     private lateinit var prefs: PrefsStore
+    private lateinit var audioManager: AudioManager
     private lateinit var glView: GLSurfaceView
     private lateinit var headTracker: HeadTracker
     private lateinit var dockRenderer: VrDockRenderer
@@ -50,6 +56,42 @@ class VrPlayerActivity : ComponentActivity() {
     private var lastTouchX = 0f
     private var lastTouchY = 0f
     private var touchMovedDistance = 0f
+    private var touchDownElapsedMs = 0L
+
+    private var playbackMediaId = ""
+    private var playbackUriStr = ""
+    private var playbackTitle = ""
+    private var playbackIsStream = false
+    private var playbackIsDemo = false
+    private var fallbackDurationMs = 0L
+    private var intendedResumeMs = 0L
+    private var playbackReachedReady = false
+    private var lastPersistedPosMs = -1L
+    private var lastPersistWallMs = 0L
+
+    private fun persistPlaybackProgress(force: Boolean = false) {
+        val player = exoPlayer ?: return
+        if (playbackUriStr.isBlank()) return
+        if (!playbackReachedReady && intendedResumeMs > 2_000L) return
+        val now = SystemClock.elapsedRealtime()
+        val pos = player.currentPosition.coerceAtLeast(0L)
+        val dur = player.duration.takeIf { it > 0L } ?: fallbackDurationMs
+        if (!force) {
+            if (now - lastPersistWallMs < 5000L) return
+            if (lastPersistedPosMs >= 0L && abs(pos - lastPersistedPosMs) < 1500L) return
+        }
+        lastPersistWallMs = now
+        lastPersistedPosMs = pos
+        prefs.upsertWatchProgress(
+            mediaId = playbackMediaId,
+            uriString = playbackUriStr,
+            title = playbackTitle,
+            positionMs = pos,
+            durationMs = dur,
+            isStream = playbackIsStream,
+            isDemo = playbackIsDemo,
+        )
+    }
 
     private val telemetryTicker = object : Runnable {
         override fun run() {
@@ -57,11 +99,17 @@ class VrPlayerActivity : ComponentActivity() {
             if (player != null) {
                 val pos = player.currentPosition.coerceAtLeast(0L)
                 val dur = player.duration.coerceAtLeast(0L)
-                renderer.isPlaying = player.isPlaying
+                renderer.isPlaying = player.isPlaying || (player.playWhenReady && player.playbackState != Player.STATE_ENDED)
                 renderer.isMuted = player.volume <= 0.01f
+                renderer.volumeFraction = readVolumeFraction()
                 renderer.positionMs = pos
                 renderer.durationMs = dur
-                renderer.activeSubtitleText = SrtVttParser.activeCueAt(subtitleCues, pos)
+                renderer.activeSubtitleText = SrtVttParser.activeCueAt(
+                    cues = subtitleCues,
+                    positionMs = pos,
+                    offsetMs = renderer.config.subtitleOffsetMs,
+                )
+                persistPlaybackProgress(force = false)
             }
             mainHandler.postDelayed(this, 100L)
         }
@@ -70,23 +118,39 @@ class VrPlayerActivity : ComponentActivity() {
     @SuppressLint("ClickableViewAccessibility")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            overrideActivityTransition(
+                OVERRIDE_TRANSITION_OPEN,
+                R.anim.vr_enter_fade,
+                R.anim.vr_stay,
+            )
+            overrideActivityTransition(
+                OVERRIDE_TRANSITION_CLOSE,
+                R.anim.vr_enter_fade,
+                R.anim.vr_exit_fade,
+            )
+        }
 
         WindowCompat.setDecorFitsSystemWindows(window, false)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         hideSystemBars()
+        onBackPressedDispatcher.addCallback(
+            this,
+            object : OnBackPressedCallback(true) {
+                override fun handleOnBackPressed() {
+                    finish()
+                }
+            },
+        )
 
         prefs = PrefsStore(this)
+        audioManager = getSystemService(AudioManager::class.java)
         val initialCfg = prefs.loadConfig()
         applyThermalBrightnessCap(initialCfg.thermalCapEnabled)
+        DisplayRefreshHelper.enablePeakRefreshRate(this)
 
         headTracker = HeadTracker(this).apply {
-            val rot = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
-                display?.rotation ?: android.view.Surface.ROTATION_90
-            } else {
-                @Suppress("DEPRECATION")
-                windowManager.defaultDisplay.rotation
-            }
-            displayRotation = rot
+            displayRotation = currentDisplayRotation()
         }
         dockRenderer = VrDockRenderer()
 
@@ -95,13 +159,33 @@ class VrPlayerActivity : ComponentActivity() {
             finish()
             return
         }
+        playbackUriStr = videoUriStr
+        playbackMediaId = intent.getStringExtra(EXTRA_MEDIA_ID) ?: "hist_${videoUriStr.hashCode()}"
+        playbackTitle = intent.getStringExtra(EXTRA_VIDEO_TITLE) ?: "Video"
+        playbackIsStream = intent.getBooleanExtra(EXTRA_IS_STREAM, false)
+        playbackIsDemo = intent.getBooleanExtra(EXTRA_IS_DEMO, false)
+        fallbackDurationMs = intent.getLongExtra(EXTRA_DURATION_MS, 0L)
+        val resumeMs = if (intent.hasExtra(EXTRA_RESUME_MS)) {
+            intent.getLongExtra(EXTRA_RESUME_MS, 0L).coerceAtLeast(0L)
+        } else {
+            prefs.getResumePositionMs(videoUriStr)
+        }
+        intendedResumeMs = resumeMs
+
         val videoUri = Uri.parse(videoUriStr)
         val subUriStr = intent.getStringExtra(EXTRA_SUBTITLE_URI)
 
         val player = ExoPlayer.Builder(this).build().apply {
-            repeatMode = Player.REPEAT_MODE_ONE
+            repeatMode = if (playbackIsDemo) Player.REPEAT_MODE_ONE else Player.REPEAT_MODE_OFF
             addListener(
                 object : Player.Listener {
+                    override fun onPlaybackStateChanged(playbackState: Int) {
+                        if (playbackState == Player.STATE_READY) {
+                            playbackReachedReady = true
+                            persistPlaybackProgress(force = true)
+                        }
+                    }
+
                     override fun onVideoSizeChanged(videoSize: VideoSize) {
                         if (videoSize.width > 0 && videoSize.height > 0) {
                             renderer.videoAspectRatio =
@@ -119,6 +203,14 @@ class VrPlayerActivity : ComponentActivity() {
                 },
             )
             setMediaItem(MediaItem.fromUri(videoUri))
+            if (resumeMs > 2_000L) {
+                seekTo(resumeMs)
+                Toast.makeText(
+                    this@VrPlayerActivity,
+                    "Resuming at ${MediaRepository.formatDuration(resumeMs)}",
+                    Toast.LENGTH_SHORT,
+                ).show()
+            }
             prepare()
             playWhenReady = true
         }
@@ -140,6 +232,7 @@ class VrPlayerActivity : ComponentActivity() {
             },
         ).also {
             it.config = initialCfg
+            it.volumeFraction = readVolumeFraction()
         }
 
         if (!subUriStr.isNullOrBlank()) {
@@ -162,6 +255,7 @@ class VrPlayerActivity : ComponentActivity() {
                         lastTouchX = ev.x
                         lastTouchY = ev.y
                         touchMovedDistance = 0f
+                        touchDownElapsedMs = SystemClock.elapsedRealtime()
                     }
 
                     MotionEvent.ACTION_MOVE -> {
@@ -180,7 +274,11 @@ class VrPlayerActivity : ComponentActivity() {
 
                     MotionEvent.ACTION_UP -> {
                         if (touchMovedDistance <= 18f) {
-                            if (!renderer.triggerCurrentGazeOrToggleDock()) {
+                            val heldMs = SystemClock.elapsedRealtime() - touchDownElapsedMs
+                            if (dockRenderer.dockLocked && heldMs >= 650L) {
+                                dockRenderer.dockLocked = false
+                                dockRenderer.dockHidden = false
+                            } else if (!renderer.triggerCurrentGazeOrToggleDock() && !dockRenderer.dockLocked) {
                                 dockRenderer.dockHidden = !dockRenderer.dockHidden
                             }
                         }
@@ -199,7 +297,14 @@ class VrPlayerActivity : ComponentActivity() {
         when (action) {
             DockAction.NONE -> Unit
             DockAction.TOGGLE_PLAY -> if (player != null) {
-                if (player.isPlaying) player.pause() else player.play()
+                if (player.isPlaying) {
+                    player.pause()
+                } else {
+                    if (player.playbackState == Player.STATE_ENDED) {
+                        player.seekTo(0L)
+                    }
+                    player.play()
+                }
             }
             DockAction.SEEK_BACK -> if (player != null) {
                 player.seekTo((player.currentPosition - 10_000L).coerceAtLeast(0L))
@@ -215,6 +320,19 @@ class VrPlayerActivity : ComponentActivity() {
             DockAction.TOGGLE_MUTE -> if (player != null) {
                 player.volume = if (player.volume <= 0.01f) 1f else 0f
             }
+            DockAction.VOL_DOWN -> adjustMediaVolume(-1)
+            DockAction.VOL_UP -> {
+                if (player != null && player.volume <= 0.01f) {
+                    player.volume = 1f
+                }
+                adjustMediaVolume(1)
+            }
+            DockAction.TOGGLE_LOCK -> {
+                val nextLocked = !dockRenderer.dockLocked
+                dockRenderer.dockLocked = nextLocked
+                dockRenderer.showSettings = false
+                dockRenderer.dockHidden = nextLocked
+            }
             DockAction.TOGGLE_CC -> if (renderer.subtitlesLoaded) {
                 renderer.subtitlesEnabled = !renderer.subtitlesEnabled
             }
@@ -223,8 +341,16 @@ class VrPlayerActivity : ComponentActivity() {
                 renderer.config = updated
                 prefs.saveConfig(updated)
             }
-            DockAction.RECENTER -> headTracker.recenter()
+            DockAction.RECENTER -> headTracker.recenter(calibrateBedPose = false)
             DockAction.TOGGLE_SETTINGS -> dockRenderer.showSettings = !dockRenderer.showSettings
+            DockAction.CYCLE_BED_TILT -> {
+                val cur = headTracker.getEffectiveBedTiltDeg()
+                val nextTilt = BED_TILT_PRESETS.firstOrNull { it > cur + 2f } ?: BED_TILT_PRESETS.first()
+                headTracker.setBedTiltDeg(nextTilt)
+                val updated = cfg.copy(bedTiltDeg = nextTilt)
+                renderer.config = updated
+                prefs.saveConfig(updated)
+            }
             DockAction.IPD_MINUS -> {
                 val updated = cfg.copy(ipdMm = (cfg.ipdMm - 1f).coerceIn(54f, 72f))
                 renderer.config = updated
@@ -270,6 +396,15 @@ class VrPlayerActivity : ComponentActivity() {
         }
     }
 
+    override fun finish() {
+        persistPlaybackProgress(force = true)
+        super.finish()
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            @Suppress("DEPRECATION")
+            overridePendingTransition(R.anim.vr_enter_fade, R.anim.vr_exit_fade)
+        }
+    }
+
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
         return when (keyCode) {
             KeyEvent.KEYCODE_DPAD_CENTER,
@@ -282,7 +417,7 @@ class VrPlayerActivity : ComponentActivity() {
                 true
             }
 
-            KeyEvent.KEYCODE_BUTTON_B, KeyEvent.KEYCODE_BACK -> {
+            KeyEvent.KEYCODE_BUTTON_B -> {
                 finish()
                 true
             }
@@ -298,7 +433,7 @@ class VrPlayerActivity : ComponentActivity() {
             }
 
             KeyEvent.KEYCODE_BUTTON_X -> {
-                handleDockAction(DockAction.RECENTER, 0f)
+                headTracker.recenter(calibrateBedPose = true)
                 true
             }
 
@@ -309,14 +444,29 @@ class VrPlayerActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         hideSystemBars()
+        headTracker.displayRotation = currentDisplayRotation()
         glView.onResume()
         headTracker.start()
         mainHandler.post(telemetryTicker)
         volumeControlStream = AudioManager.STREAM_MUSIC
     }
 
+    override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
+        super.onConfigurationChanged(newConfig)
+        headTracker.displayRotation = currentDisplayRotation()
+    }
+
+    private fun currentDisplayRotation(): Int =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            display?.rotation ?: Surface.ROTATION_90
+        } else {
+            @Suppress("DEPRECATION")
+            windowManager.defaultDisplay.rotation
+        }
+
     override fun onPause() {
         super.onPause()
+        persistPlaybackProgress(force = true)
         mainHandler.removeCallbacks(telemetryTicker)
         headTracker.stop()
         glView.onPause()
@@ -324,6 +474,7 @@ class VrPlayerActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        persistPlaybackProgress(force = true)
         super.onDestroy()
         mainHandler.removeCallbacksAndMessages(null)
         exoPlayer?.setVideoSurface(null)
@@ -331,12 +482,30 @@ class VrPlayerActivity : ComponentActivity() {
         exoPlayer = null
         decoderSurface?.release()
         decoderSurface = null
+        renderer.releaseSurfaceTexture()
     }
 
     private fun applyThermalBrightnessCap(capEnabled: Boolean) {
         val attrs = window.attributes
         attrs.screenBrightness = if (capEnabled) 0.60f else WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
         window.attributes = attrs
+    }
+
+    private fun readVolumeFraction(): Float {
+        val max = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC).coerceAtLeast(1)
+        val cur = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC).coerceIn(0, max)
+        return cur.toFloat() / max.toFloat()
+    }
+
+    private fun adjustMediaVolume(direction: Int) {
+        val max = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC).coerceAtLeast(1)
+        val cur = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC).coerceIn(0, max)
+        val step = kotlin.math.max(1, kotlin.math.ceil(max / 12.0).toInt())
+        val target = (cur + direction * step).coerceIn(0, max)
+        runCatching {
+            audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, target, 0)
+        }
+        renderer.volumeFraction = readVolumeFraction()
     }
 
     private fun hideSystemBars() {
@@ -346,9 +515,15 @@ class VrPlayerActivity : ComponentActivity() {
     }
 
     companion object {
+        private val BED_TILT_PRESETS = floatArrayOf(30f, 46f, 60f, 75f, 90f)
         const val EXTRA_VIDEO_URI = "extra_video_uri"
         const val EXTRA_VIDEO_TITLE = "extra_video_title"
         const val EXTRA_SUBTITLE_URI = "extra_subtitle_uri"
         const val EXTRA_SUBTITLE_NAME = "extra_subtitle_name"
+        const val EXTRA_MEDIA_ID = "extra_media_id"
+        const val EXTRA_DURATION_MS = "extra_duration_ms"
+        const val EXTRA_IS_STREAM = "extra_is_stream"
+        const val EXTRA_IS_DEMO = "extra_is_demo"
+        const val EXTRA_RESUME_MS = "extra_resume_ms"
     }
 }

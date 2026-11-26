@@ -54,14 +54,19 @@ object SrtVttParser {
         return cues.sortedBy { it.startMs }
     }
 
-    fun activeCueAt(cues: List<SubtitleCue>, positionMs: Long): String? {
-        if (cues.isEmpty() || positionMs < 0L) return null
+    fun activeCueAt(
+        cues: List<SubtitleCue>,
+        positionMs: Long,
+        offsetMs: Long = 0L,
+    ): String? {
+        val adjustedPos = positionMs - offsetMs
+        if (cues.isEmpty() || adjustedPos < 0L) return null
         var low = 0
         var high = cues.lastIndex
         var candidate = -1
         while (low <= high) {
             val mid = (low + high) ushr 1
-            if (cues[mid].startMs <= positionMs) {
+            if (cues[mid].startMs <= adjustedPos) {
                 candidate = mid
                 low = mid + 1
             } else {
@@ -71,7 +76,7 @@ object SrtVttParser {
         // Check backward nearby overlapping cues just in case.
         for (idx in candidate downTo maxOf(0, candidate - 4)) {
             val cue = cues[idx]
-            if (positionMs in cue.startMs..cue.endMs) {
+            if (adjustedPos in cue.startMs..cue.endMs) {
                 return cue.text
             }
         }

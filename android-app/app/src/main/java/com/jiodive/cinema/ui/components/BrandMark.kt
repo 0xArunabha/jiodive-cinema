@@ -7,11 +7,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -20,25 +18,23 @@ import com.jiodive.cinema.ui.theme.LocalCinemaExtras
 @Composable
 fun HeadsetBrandMark(
     modifier: Modifier = Modifier,
-    size: Dp = 36.dp,
+    size: Dp = 34.dp,
 ) {
     val extras = LocalCinemaExtras.current
-    val primary = extras.turquoiseAccent
-    val emerald = extras.emeraldReady
-    val gold = extras.goldHighlight
+    val accent = extras.turquoiseAccent
 
     Canvas(modifier = modifier.size(size)) {
         val w = this.size.width
         val h = this.size.height
 
-        // Headband arc
+        // Single-tone strap arc
         val headband = Path().apply {
-            moveTo(w * 0.14f, h * 0.25f)
-            quadraticTo(w * 0.50f, h * 0.12f, w * 0.86f, h * 0.25f)
+            moveTo(w * 0.16f, h * 0.26f)
+            quadraticTo(w * 0.50f, h * 0.13f, w * 0.84f, h * 0.26f)
         }
         drawPath(
             path = headband,
-            brush = Brush.horizontalGradient(listOf(primary, emerald, gold)),
+            color = accent.copy(alpha = 0.78f),
             style = Stroke(width = w * 0.06f, cap = StrokeCap.Round),
         )
 
@@ -56,29 +52,25 @@ fun HeadsetBrandMark(
         }
         drawPath(
             path = visor,
-            color = primary.copy(alpha = 0.16f),
+            color = accent.copy(alpha = 0.12f),
         )
         drawPath(
             path = visor,
-            brush = Brush.linearGradient(
-                colors = listOf(primary, emerald),
-                start = Offset(0f, 0f),
-                end = Offset(w, h),
-            ),
+            color = accent,
             style = Stroke(width = w * 0.065f, join = StrokeJoin.Round),
         )
 
-        // Dual optical lenses (turquoise & emerald-gold)
+        // Matched symmetrical optical lenses
         drawRoundRect(
-            color = primary,
-            topLeft = Offset(w * 0.19f, h * 0.43f),
-            size = Size(w * 0.24f, h * 0.21f),
+            color = accent,
+            topLeft = Offset(w * 0.19f, h * 0.44f),
+            size = Size(w * 0.24f, h * 0.20f),
             cornerRadius = CornerRadius(w * 0.06f, w * 0.06f),
         )
         drawRoundRect(
-            brush = Brush.linearGradient(listOf(emerald, gold)),
-            topLeft = Offset(w * 0.57f, h * 0.43f),
-            size = Size(w * 0.24f, h * 0.21f),
+            color = accent,
+            topLeft = Offset(w * 0.57f, h * 0.44f),
+            size = Size(w * 0.24f, h * 0.20f),
             cornerRadius = CornerRadius(w * 0.06f, w * 0.06f),
         )
     }

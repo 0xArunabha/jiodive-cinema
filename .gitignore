@@ -1,7 +1,9 @@
-node_modules
-dist
-dist-ssr
+*.iml
+.gradle/
+.kotlin/
+build/
+local.properties
 *.local
 .DS_Store
-.vscode
-.idea
+.vscode/
+.idea/
